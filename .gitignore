@@ -1,0 +1,204 @@
+# =============================================================================
+# .gitignore — web-optimised-video-generation
+# Comprehensive Python + video generation project ignore file
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Python Bytecode & Compiled Files
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+
+# -----------------------------------------------------------------------------
+# Build & Distribution
+# -----------------------------------------------------------------------------
+build/
+dist/
+develop-eggs/
+sdist/
+wheels/
+.installed.cfg
+MANIFEST
+
+# -----------------------------------------------------------------------------
+# Virtual Environments
+# -----------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# -----------------------------------------------------------------------------
+# Testing & Coverage
+# -----------------------------------------------------------------------------
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+nosetests.xml
+
+# -----------------------------------------------------------------------------
+# Type Checking & Linting
+# -----------------------------------------------------------------------------
+.mypy_cache/
+.pytype/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyright/
+
+# -----------------------------------------------------------------------------
+# Environment & Secrets
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.template
+.pypirc
+
+# Credentials & keys
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account.json
+passwords.txt
+passwords.json
+.htpasswd
+
+# Cloud provider directories
+.aws/
+.azure/
+.gcloud/
+
+# SSH keys
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+
+# -----------------------------------------------------------------------------
+# Video Generation
+# TODO(human): Customise this section for your video processing workflow
+# -----------------------------------------------------------------------------
+# Root-level generated web media (allows tracking media in subdirectories)
+/*.mp4
+/*.webm
+
+# -----------------------------------------------------------------------------
+# Jupyter Notebooks
+# -----------------------------------------------------------------------------
+.ipynb_checkpoints/
+
+# -----------------------------------------------------------------------------
+# IDE & Editors
+# -----------------------------------------------------------------------------
+
+# VSCode
+.vscode/
+.history/
+*.vsix
+
+# JetBrains
+.idea/
+
+# Vim
+[._]*.s[a-v][a-z]
+!*.svg
+.netrwhist
+*~
+tags
+
+# Emacs
+\#*\#
+*.elc
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Spyder
+.spyderproject
+.spyproject
+
+# -----------------------------------------------------------------------------
+# OS-Specific
+# -----------------------------------------------------------------------------
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+.icloud
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.cab
+*.msi
+
+# Linux
+.directory
+.Trash-*
+.nfs*
+.fuse_hidden*
+
+# -----------------------------------------------------------------------------
+# Databases
+# -----------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+
+# -----------------------------------------------------------------------------
+# Logs & Temporary Files
+# -----------------------------------------------------------------------------
+*.log
+*.log.*
+logs/
+*.tmp
+*.bak
+*.old
+*.orig
+tmp/
+temp/
+.cache/
+
+# -----------------------------------------------------------------------------
+# Docker
+# -----------------------------------------------------------------------------
+.docker/
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# -----------------------------------------------------------------------------
+# Git Merge Artifacts
+# -----------------------------------------------------------------------------
+*.BACKUP.*
+*.BASE.*
+*.LOCAL.*
+*.REMOTE.*
+
+# -----------------------------------------------------------------------------
+# Obsidian
+# -----------------------------------------------------------------------------
+.obsidian/
+.obsidian-sync.json
+.obsidian-sync-conflict-*

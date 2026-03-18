@@ -8,6 +8,6 @@
     <PackageVersion Include="FsToolkit.ErrorHandling" Version="5.2.0" />
     <PackageVersion Include="G-Research.FSharp.Analyzers" Version="0.22.0" />
     <PackageVersion Include="Ionide.Analyzers" Version="0.15.0" />
-    <PackageVersion Include="Spectre.Console" Version="0.54.0" />
+    <PackageVersion Include="EluciusFTW.SpectreCoff" Version="0.54.2" />
   </ItemGroup>
 </Project>

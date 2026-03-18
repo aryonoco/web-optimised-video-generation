@@ -16,6 +16,7 @@
   <ItemGroup>
     <Compile Include="Constants.fs" />
     <Compile Include="Domain.fs" />
+    <Compile Include="Shell.fs" />
     <Compile Include="ProbeParse.fs" />
     <Compile Include="Commands.fs" />
     <Compile Include="Ebml.fs" />
@@ -34,7 +35,7 @@
     <PackageReference Include="FsToolkit.ErrorHandling" />
     <PackageReference Include="G-Research.FSharp.Analyzers" />
     <PackageReference Include="Ionide.Analyzers" />
-    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="EluciusFTW.SpectreCoff" />
   </ItemGroup>
 
 </Project>

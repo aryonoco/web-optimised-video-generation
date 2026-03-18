@@ -1,9 +1,11 @@
 module WebOptimise.Program
 
+open SpectreCoff
+
 [<EntryPoint>]
 let main argv =
     try
         WebOptimise.Cli.run(argv).GetAwaiter().GetResult()
     with :? System.OperationCanceledException ->
-        Spectre.Console.AnsiConsole.MarkupLine "\n[yellow]Interrupted by user[/]"
+        E "\nInterrupted by user" |> toConsole
         130

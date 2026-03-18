@@ -5,7 +5,6 @@ open System.IO
 open System.Text
 open System.Threading
 open System.Threading.Tasks
-open CliWrap
 open FsToolkit.ErrorHandling
 
 /// ffmpeg execution with progress tracking.
@@ -31,7 +30,7 @@ module Process =
         (onProgress: float -> unit)
         (ct: CancellationToken)
         : Task<Result<EncodeResult, AppError>> =
-        taskResult {
+        task {
             let createDirResult =
                 try
                     Directory.CreateDirectory outputDir |> ignore
@@ -39,62 +38,53 @@ module Process =
                 with ex ->
                     Error(AppError.IoError $"Cannot create output directory: %s{ex.Message}")
 
-            do! createDirResult |> Task.FromResult
+            match createDirResult with
+            | Error e -> return Error e
+            | Ok() ->
 
-            let outputPath =
-                Path.Combine(outputDir, Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
+                let outputPath =
+                    Path.Combine(outputDir, Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
 
-            let args = config.CmdBuilder info outputPath
-            let stdErrBuilder = StringBuilder()
+                let args = config.CmdBuilder info outputPath
+                let stdErrBuilder = StringBuilder()
 
-            let cmd =
-                Cli
-                    .Wrap("ffmpeg")
-                    .WithArguments(args)
-                    .WithValidation(CommandResultValidation.None)
-                    .WithStandardOutputPipe(PipeTarget.ToDelegate(parseProgressLine onProgress info.DurationSecs))
-                    .WithStandardErrorPipe(PipeTarget.ToStringBuilder(stdErrBuilder))
+                let! shellResult =
+                    Shell.runStreaming "ffmpeg" args (parseProgressLine onProgress info.DurationSecs) stdErrBuilder ct
 
-            let! execResult =
-                task {
-                    try
-                        let! r = cmd.ExecuteAsync(ct)
-                        return Ok r
-                    with
-                    | :? OperationCanceledException ->
-                        if File.Exists outputPath then
-                            File.Delete outputPath
+                match shellResult with
+                | Error "cancelled" ->
+                    if File.Exists outputPath then
+                        File.Delete outputPath
 
-                        return Error(AppError.IoError "Operation cancelled")
-                    | ex ->
-                        if File.Exists outputPath then
-                            File.Delete outputPath
+                    return Error(AppError.IoError "Operation cancelled")
+                | Error msg ->
+                    if File.Exists outputPath then
+                        File.Delete outputPath
 
-                        return Error(AppError.EncodeError($"Unexpected error: %s{ex.Message}", ValueNone))
-                }
+                    return Error(AppError.EncodeError($"Unexpected error: %s{msg}", ValueNone))
+                | Ok exitCode when exitCode <> 0 ->
+                    if File.Exists outputPath then
+                        File.Delete outputPath
 
-            if execResult.ExitCode <> 0 then
-                if File.Exists outputPath then
-                    File.Delete outputPath
+                    let stderr = stdErrBuilder.ToString()
 
-                let stderr = stdErrBuilder.ToString()
-
-                return!
-                    Error(
-                        AppError.EncodeError(
-                            $"%s{config.ErrorVerb} failed for %s{MediaFilePath.name info.Path}: exit code %d{execResult.ExitCode}\n%s{stderr}",
-                            ValueSome("ffmpeg" :: args)
+                    return
+                        Error(
+                            AppError.EncodeError(
+                                $"%s{config.ErrorVerb} failed for %s{MediaFilePath.name info.Path}: exit code %d{exitCode}\n%s{stderr}",
+                                ValueSome("ffmpeg" :: args)
+                            )
                         )
-                    )
-            else
+                | Ok _ ->
 
-                let outputSize = System.IO.FileInfo(outputPath).Length
+                    let outputSize = System.IO.FileInfo(outputPath).Length
 
-                return
-                    { InputPath = info.Path
-                      OutputPath = outputPath
-                      InputSize = info.SizeBytes
-                      OutputSize = outputSize }
+                    return
+                        Ok
+                            { InputPath = info.Path
+                              OutputPath = outputPath
+                              InputSize = info.SizeBytes
+                              OutputSize = outputSize }
         }
 
     let processFile

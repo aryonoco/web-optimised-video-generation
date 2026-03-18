@@ -3,27 +3,19 @@ namespace WebOptimise
 open System
 open System.IO
 open System.Text.Json
-open CliWrap
-open CliWrap.Buffered
 open System.Threading.Tasks
+open FsToolkit.ErrorHandling
 
-/// Output file verification. Mix of shell (CliWrap subprocess) and pure checks.
 [<RequireQualifiedAccess>]
 module Verify =
 
-    let private runFfprobe (args: string list) : Task<Result<BufferedCommandResult, string>> =
-        task {
-            try
-                let! result =
-                    Cli
-                        .Wrap("ffprobe")
-                        .WithArguments(args)
-                        .WithValidation(CommandResultValidation.None)
-                        .ExecuteBufferedAsync()
+    let private runFfprobe (args: string list) : Task<Result<BufferedOutput, string>> = Shell.runBuffered "ffprobe" args
 
-                return Ok result
-            with ex ->
-                return Error $"ffprobe failed: %s{ex.Message}"
+    let private toValidation (check: Task<string option>) : Task<Result<unit, string list>> =
+        task {
+            match! check with
+            | None -> return Ok()
+            | Some msg -> return Error [ msg ]
         }
 
     let private checkVideoProfile (path: string) : Task<string option> =
@@ -32,30 +24,27 @@ module Verify =
             | Error msg -> return Some msg
             | Ok result ->
                 try
-                    let doc = JsonDocument.Parse(result.StandardOutput)
-                    let streams = doc.RootElement.GetProperty("streams")
+                    let root = JsonDocument.Parse(result.StdOut).RootElement
 
-                    let videoStream =
-                        seq { for i in 0 .. streams.GetArrayLength() - 1 -> streams[i] }
-                        |> Seq.tryFind (fun s ->
-                            let mutable elem = Unchecked.defaultof<JsonElement>
-                            s.TryGetProperty("codec_type", &elem) && elem.GetString() = "video")
+                    let profile =
+                        match root with
+                        | Json.Prop "streams" (Json.Arr streams) ->
+                            streams
+                            |> Seq.tryFind (fun s ->
+                                match s with
+                                | Json.Prop "codec_type" (Json.Str "video") -> true
+                                | _ -> false)
+                            |> Option.bind (fun s ->
+                                match s with
+                                | Json.Prop "profile" (Json.Str p) -> Some p
+                                | _ -> None)
+                        | _ -> None
 
-                    match videoStream with
+                    match profile with
                     | None -> return Some "No video stream found"
-                    | Some stream ->
-                        let mutable profileElem = Unchecked.defaultof<JsonElement>
-
-                        let profile =
-                            if stream.TryGetProperty("profile", &profileElem) then
-                                profileElem.GetString() |> Option.ofObj |> Option.defaultValue ""
-                            else
-                                ""
-
-                        if not (profile.Contains("High", StringComparison.Ordinal)) then
-                            return Some $"Expected High profile, got '%s{profile}'"
-                        else
-                            return None
+                    | Some p when not (p.Contains("High", StringComparison.Ordinal)) ->
+                        return Some $"Expected High profile, got '%s{p}'"
+                    | _ -> return None
                 with ex ->
                     return Some $"Failed to parse ffprobe output: %s{ex.Message}"
         }
@@ -65,7 +54,7 @@ module Verify =
             match! runFfprobe [ "-v"; "trace"; path ] with
             | Error msg -> return Some msg
             | Ok result ->
-                let stderr = result.StandardError
+                let stderr = result.StdErr
                 let moovPos = stderr.IndexOf("type:'moov'", StringComparison.Ordinal)
                 let mdatPos = stderr.IndexOf("type:'mdat'", StringComparison.Ordinal)
 
@@ -90,9 +79,27 @@ module Verify =
                 None)
         |> Array.toList
 
+    let private analyseKeyframeIntervals (output: string) : string option =
+        let keyframeTimes = parseKeyframeTimes output
+
+        if keyframeTimes.Length >= Constants.MinKeyframesForCheck then
+            let sampleCount = min (keyframeTimes.Length - 1) Constants.MaxKeyframeSample
+
+            let intervals =
+                [ for i in 0 .. sampleCount - 1 -> keyframeTimes[i + 1] - keyframeTimes[i] ]
+
+            let avgInterval = List.average intervals
+
+            if avgInterval > Constants.MaxAcceptableKeyframeInterval then
+                Some $"Keyframe interval too large: %.1f{avgInterval}s (expected ~%d{Constants.KeyframeIntervalSecs}s)"
+            else
+                None
+        else
+            None
+
     let private checkKeyframeIntervals (path: string) : Task<string option> =
         task {
-            match!
+            let! probeResult =
                 runFfprobe
                     [ "-v"
                       "quiet"
@@ -103,27 +110,11 @@ module Verify =
                       "-of"
                       "csv=p=0"
                       path ]
-            with
-            | Error msg -> return Some msg
-            | Ok result ->
-                let keyframeTimes = parseKeyframeTimes result.StandardOutput
 
-                if keyframeTimes.Length >= Constants.MinKeyframesForCheck then
-                    let sampleCount = min (keyframeTimes.Length - 1) Constants.MaxKeyframeSample
-
-                    let intervals =
-                        [ for i in 0 .. sampleCount - 1 -> keyframeTimes[i + 1] - keyframeTimes[i] ]
-
-                    let avgInterval = List.average intervals
-
-                    if avgInterval > Constants.MaxAcceptableKeyframeInterval then
-                        return
-                            Some
-                                $"Keyframe interval too large: %.1f{avgInterval}s (expected ~%d{Constants.KeyframeIntervalSecs}s)"
-                    else
-                        return None
-                else
-                    return None
+            return
+                match probeResult with
+                | Error msg -> Some msg
+                | Ok result -> analyseKeyframeIntervals result.StdOut
         }
 
     let private checkCuesFront (path: string) : Task<string option> =
@@ -144,29 +135,13 @@ module Verify =
         Task.FromResult result
 
     let verifyEncoded (path: string) : Task<Result<unit, string list>> =
-        task {
-            let! results = Task.WhenAll [| checkVideoProfile path; checkFaststart path; checkKeyframeIntervals path |]
-
-            let issues = results |> Array.choose id |> Array.toList
-            return if issues.IsEmpty then Ok() else Error issues
+        taskValidation {
+            let! _ = toValidation (checkVideoProfile path)
+            and! _ = toValidation (checkFaststart path)
+            and! _ = toValidation (checkKeyframeIntervals path)
+            return ()
         }
 
-    let verifyRemuxed (path: string) : Task<Result<unit, string list>> =
-        task {
-            let! issue = checkFaststart path
+    let verifyRemuxed (path: string) : Task<Result<unit, string list>> = toValidation (checkFaststart path)
 
-            return
-                match issue with
-                | None -> Ok()
-                | Some msg -> Error [ msg ]
-        }
-
-    let verifyWebm (path: string) : Task<Result<unit, string list>> =
-        task {
-            let! issue = checkCuesFront path
-
-            return
-                match issue with
-                | None -> Ok()
-                | Some msg -> Error [ msg ]
-        }
+    let verifyWebm (path: string) : Task<Result<unit, string list>> = toValidation (checkCuesFront path)

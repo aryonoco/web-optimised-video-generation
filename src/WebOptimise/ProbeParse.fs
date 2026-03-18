@@ -6,77 +6,76 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module ProbeParse =
 
-    let private tryGetString (elem: JsonElement) (prop: string) : string option =
-        let mutable child = Unchecked.defaultof<JsonElement>
-
-        if elem.TryGetProperty(prop, &child) && child.ValueKind = JsonValueKind.String then
-            child.GetString() |> Option.ofObj
-        else
-            None
-
-    let private getString (elem: JsonElement) (prop: string) (fallback: string) : string =
-        tryGetString elem prop |> Option.defaultValue fallback
-
-    let private tryGetInt (elem: JsonElement) (prop: string) : int voption =
-        let mutable child = Unchecked.defaultof<JsonElement>
-
-        if elem.TryGetProperty(prop, &child) then
-            let mutable v = 0
-
-            if child.TryGetInt32(&v) then ValueSome v else ValueNone
-        else
-            ValueNone
-
-    let private getInt (elem: JsonElement) (prop: string) : int =
-        tryGetInt elem prop |> ValueOption.defaultValue 0
-
     let private findStream (codecType: string) (root: JsonElement) : JsonElement voption =
-        let mutable streamsElem = Unchecked.defaultof<JsonElement>
-
-        if
-            root.TryGetProperty("streams", &streamsElem)
-            && streamsElem.ValueKind = JsonValueKind.Array
-        then
-            let len = streamsElem.GetArrayLength()
-
-            let rec scan i =
-                if i >= len then
-                    ValueNone
-                else
-                    let s = streamsElem[i]
-
-                    if getString s "codec_type" "" = codecType then
-                        ValueSome s
-                    else
-                        scan (i + 1)
-
-            scan 0
-        else
-            ValueNone
+        match root with
+        | Json.Prop "streams" (Json.Arr streams) ->
+            streams
+            |> Seq.tryFind (fun s ->
+                match s with
+                | Json.Prop "codec_type" (Json.Str ct) -> ct = codecType
+                | _ -> false)
+            |> ValueOption.ofOption
+        | _ -> ValueNone
 
     let private parseVideoStream (elem: JsonElement) : VideoStream =
-        { Codec = getString elem "codec_name" "unknown"
-          Profile = getString elem "profile" "unknown"
-          Width = getInt elem "width" |> max 0
-          Height = getInt elem "height" |> max 0
-          FrameRate = getString elem "r_frame_rate" "0/1" |> Parse.frameRate
-          Bitrate = tryGetString elem "bit_rate" |> Parse.safeInt64 }
+        { Codec =
+            match elem with
+            | Json.Prop "codec_name" (Json.Str s) -> s
+            | _ -> "unknown"
+          Profile =
+            match elem with
+            | Json.Prop "profile" (Json.Str s) -> s
+            | _ -> "unknown"
+          Width =
+            match elem with
+            | Json.Prop "width" (Json.JInt w) -> max 0 w
+            | _ -> 0
+          Height =
+            match elem with
+            | Json.Prop "height" (Json.JInt h) -> max 0 h
+            | _ -> 0
+          FrameRate =
+            match elem with
+            | Json.Prop "r_frame_rate" (Json.Str s) -> Parse.frameRate s
+            | _ -> 0.0
+          Bitrate =
+            match elem with
+            | Json.Prop "bit_rate" (Json.Str s) -> Parse.safeInt64 (Some s)
+            | _ -> ValueNone }
 
     let private parseAudioStream (elem: JsonElement) : AudioStream =
-        { Codec = getString elem "codec_name" "unknown"
-          Channels = getInt elem "channels" |> max 0
-          SampleRate = tryGetString elem "sample_rate" |> Parse.safeInt
-          Bitrate = tryGetString elem "bit_rate" |> Parse.safeInt64 }
+        { Codec =
+            match elem with
+            | Json.Prop "codec_name" (Json.Str s) -> s
+            | _ -> "unknown"
+          Channels =
+            match elem with
+            | Json.Prop "channels" (Json.JInt c) -> max 0 c
+            | _ -> 0
+          SampleRate =
+            match elem with
+            | Json.Prop "sample_rate" (Json.Str s) -> Parse.safeInt (Some s)
+            | _ -> 0
+          Bitrate =
+            match elem with
+            | Json.Prop "bit_rate" (Json.Str s) -> Parse.safeInt64 (Some s)
+            | _ -> ValueNone }
 
     let private parseFormat (root: JsonElement) : struct (float * int64) =
-        let mutable fmtElem = Unchecked.defaultof<JsonElement>
+        match root with
+        | Json.Prop "format" fmt ->
+            let duration =
+                match fmt with
+                | Json.Prop "duration" (Json.Str s) -> Parse.safeFloat (Some s)
+                | _ -> 0.0
 
-        if root.TryGetProperty("format", &fmtElem) then
-            let duration = tryGetString fmtElem "duration" |> Parse.safeFloat
-            let size = tryGetString fmtElem "size" |> Parse.safeFloat |> int64
+            let size =
+                match fmt with
+                | Json.Prop "size" (Json.Str s) -> Parse.safeFloat (Some s) |> int64
+                | _ -> 0L
+
             struct (duration, size)
-        else
-            struct (0.0, 0L)
+        | _ -> struct (0.0, 0L)
 
     let fromJson (path: MediaFilePath) (json: string) : Result<MediaFileInfo, AppError> =
         result {

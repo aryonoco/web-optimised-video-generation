@@ -5,9 +5,7 @@ open System.Threading
 open System.Threading.Tasks
 open Argu
 open FsToolkit.ErrorHandling
-open CliWrap
-open CliWrap.Buffered
-open Spectre.Console
+open SpectreCoff
 
 type CliArgs =
     | [<MainCommand; ExactlyOnce; Last>] Paths of path: string list
@@ -72,50 +70,35 @@ module Cli =
             Error(AppError.ValidationError ex.Message)
 
     let private validateEnvironment () : Task<Result<unit, AppError>> =
-        let check (tool: string) : Task<Result<unit, AppError>> =
-            task {
-                try
-                    let! _ = Cli.Wrap(tool).WithArguments([ "-version" ]).ExecuteBufferedAsync()
-                    return Ok()
-                with
-                | :? System.ComponentModel.Win32Exception ->
-                    return Error(AppError.ValidationError $"%s{tool} not found in PATH")
-                | ex -> return Error(AppError.ValidationError $"%s{tool} failed to run: %s{ex.Message}")
-            }
-
         taskResult {
-            do! check "ffmpeg"
-            do! check "ffprobe"
+            do! Shell.runExists "ffmpeg" |> TaskResult.mapError AppError.ValidationError
+
+            do! Shell.runExists "ffprobe" |> TaskResult.mapError AppError.ValidationError
         }
 
     let private probeFile (path: MediaFilePath) : Task<Result<MediaFileInfo, AppError>> =
         task {
-            try
-                let! probeResult =
-                    CliWrap.Cli
-                        .Wrap("ffprobe")
-                        .WithArguments(
-                            [ "-v"
-                              "quiet"
-                              "-print_format"
-                              "json"
-                              "-show_streams"
-                              "-show_format"
-                              MediaFilePath.value path ]
-                        )
-                        .WithValidation(CommandResultValidation.None)
-                        .ExecuteBufferedAsync()
-
+            match!
+                Shell.runBuffered
+                    "ffprobe"
+                    [ "-v"
+                      "quiet"
+                      "-print_format"
+                      "json"
+                      "-show_streams"
+                      "-show_format"
+                      MediaFilePath.value path ]
+            with
+            | Error msg -> return Error(AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{msg}")
+            | Ok probeResult ->
                 if probeResult.ExitCode <> 0 then
                     return
                         Error(
                             AppError.ProbeError
-                                $"ffprobe failed for %s{MediaFilePath.name path}: %s{probeResult.StandardError}"
+                                $"ffprobe failed for %s{MediaFilePath.name path}: %s{probeResult.StdErr}"
                         )
                 else
-                    return ProbeParse.fromJson path probeResult.StandardOutput
-            with ex ->
-                return Error(AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{ex.Message}")
+                    return ProbeParse.fromJson path probeResult.StdOut
         }
 
     let private processOne
@@ -128,6 +111,42 @@ module Cli =
         let outputDir = Discovery.outputDir info
         Process.processFile info outputDir fileMode args.Overwrite onProgress ct
 
+    let private runProcessing (args: ParsedArgs) (infos: MediaFileInfo list) (effectiveModes: Mode list) : Task<int> =
+        task {
+            use cts = new CancellationTokenSource()
+
+            Console.CancelKeyPress.Add(fun e ->
+                e.Cancel <- true
+                cts.Cancel())
+
+            let! progressResult = Display.withProgress infos (processOne args) args.Mode cts.Token
+
+            match progressResult with
+            | Error e ->
+                Display.printError (AppError.message e)
+                return 1
+            | Ok resultsWithModes ->
+                let! allOk = Display.displayVerification resultsWithModes
+
+                NL |> toConsole
+                Display.printSummary (resultsWithModes |> List.map fst)
+
+                let verb =
+                    effectiveModes
+                    |> List.map ModeConfig.completionVerb
+                    |> List.distinct
+                    |> function
+                        | [ single ] -> single
+                        | _ -> "processed"
+
+                if allOk then
+                    P $"Done! %d{resultsWithModes.Length} file(s) %s{verb}." |> toConsole
+                else
+                    E "Done with warnings. Check verification results above." |> toConsole
+
+                return 0
+        }
+
     let run (argv: string array) : Task<int> =
         task {
             let pipeline =
@@ -137,7 +156,7 @@ module Cli =
                     let! files = Discovery.findFiles args.Paths
 
                     if files.IsEmpty then
-                        AnsiConsole.MarkupLine "[yellow]No supported media files found.[/]"
+                        E "No supported media files found." |> toConsole
                         return None
                     else
 
@@ -155,8 +174,8 @@ module Cli =
                         let modeLabel =
                             effectiveModes |> List.map ModeConfig.label |> List.sort |> String.concat " + "
 
-                        AnsiConsole.MarkupLine
-                            $"\n[bold]Found %d{infos.Length} file(s) to process[/] (mode: %s{modeLabel})\n"
+                        P $"Found %d{infos.Length} file(s) to process (mode: %s{modeLabel})"
+                        |> toConsole
 
                         Display.displayAnalysis infos args.Mode
 
@@ -168,7 +187,7 @@ module Cli =
 
                             let dryVerb = if dryVerbs.Length = 1 then dryVerbs.Head else "processed"
 
-                            AnsiConsole.MarkupLine $"\n[yellow]Dry run \u2014 no files were %s{dryVerb}.[/]"
+                            E $"Dry run \u2014 no files were %s{dryVerb}." |> toConsole
                             return None
                         else
 
@@ -182,35 +201,5 @@ module Cli =
                 Display.printError (AppError.message e)
                 return 1
             | Ok None -> return 0
-            | Ok(Some(args, infos, effectiveModes)) ->
-                use cts = new CancellationTokenSource()
-
-                Console.CancelKeyPress.Add(fun e ->
-                    e.Cancel <- true
-                    cts.Cancel())
-
-                let! progressResult = Display.withProgress infos (processOne args) args.Mode cts.Token
-
-                match progressResult with
-                | Error e ->
-                    Display.printError (AppError.message e)
-                    return 1
-                | Ok resultsWithModes ->
-                    let! allOk = Display.displayVerification resultsWithModes
-
-                    AnsiConsole.WriteLine()
-                    Display.printSummary (resultsWithModes |> List.map fst)
-
-                    if allOk then
-                        let verbs = effectiveModes |> List.map ModeConfig.completionVerb |> List.distinct
-
-                        let verb = if verbs.Length = 1 then verbs.Head else "processed"
-
-                        AnsiConsole.MarkupLine
-                            $"\n[bold green]Done![/bold green] %d{resultsWithModes.Length} file(s) %s{verb}."
-                    else
-                        AnsiConsole.MarkupLine
-                            "\n[bold yellow]Done with warnings.[/bold yellow] Check verification results above."
-
-                    return 0
+            | Ok(Some(args, infos, effectiveModes)) -> return! runProcessing args infos effectiveModes
         }

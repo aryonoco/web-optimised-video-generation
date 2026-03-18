@@ -1,6 +1,7 @@
 namespace WebOptimise
 
 open System.IO
+open System.Text.Json
 
 [<RequireQualifiedAccess>]
 module NullSafe =
@@ -156,6 +157,60 @@ module EncodeResult =
         let sign = if pct > 0.0 then "+" else ""
         $"%s{sign}%.1f{pct}%%"
 
+// Active patterns
+
+[<AutoOpen>]
+module internal ActivePatterns =
+
+    [<return: Struct>]
+    let (|Int|_|) (s: string) =
+        match System.Int32.TryParse s with
+        | true, v -> ValueSome v
+        | _ -> ValueNone
+
+    [<return: Struct>]
+    let (|Int64|_|) (s: string) =
+        match System.Int64.TryParse s with
+        | true, v -> ValueSome v
+        | _ -> ValueNone
+
+    [<return: Struct>]
+    let (|Float|_|) (s: string) =
+        match System.Double.TryParse s with
+        | true, v -> ValueSome v
+        | _ -> ValueNone
+
+[<RequireQualifiedAccess>]
+module Json =
+
+    [<return: Struct>]
+    let (|Prop|_|) (name: string) (elem: JsonElement) =
+        let mutable child = Unchecked.defaultof<JsonElement>
+
+        if elem.TryGetProperty(name, &child) then
+            ValueSome child
+        else
+            ValueNone
+
+    [<return: Struct>]
+    let (|Str|_|) (elem: JsonElement) =
+        if elem.ValueKind = JsonValueKind.String then
+            elem.GetString() |> ValueOption.ofObj
+        else
+            ValueNone
+
+    [<return: Struct>]
+    let (|JInt|_|) (elem: JsonElement) =
+        let mutable v = 0
+        if elem.TryGetInt32(&v) then ValueSome v else ValueNone
+
+    [<return: Struct>]
+    let (|Arr|_|) (elem: JsonElement) =
+        if elem.ValueKind = JsonValueKind.Array then
+            ValueSome(seq { for i in 0 .. elem.GetArrayLength() - 1 -> elem[i] })
+        else
+            ValueNone
+
 // Pure helpers
 
 [<RequireQualifiedAccess>]
@@ -163,36 +218,21 @@ module Parse =
 
     let frameRate (fpsStr: string) : float =
         match fpsStr.Split('/') with
-        | [| num; den |] ->
-            match System.Int32.TryParse num, System.Int32.TryParse den with
-            | (true, n), (true, d) when d <> 0 -> float n / float d
-            | _ -> 0.0
-        | [| num |] ->
-            match System.Double.TryParse num with
-            | true, f -> f
-            | _ -> 0.0
+        | [| Int n; Int d |] when d <> 0 -> float n / float d
+        | [| Float f |] -> f
         | _ -> 0.0
 
-    let safeInt64 (value: string option) : int64 voption =
-        match value with
-        | None -> ValueNone
-        | Some s ->
-            match System.Int64.TryParse s with
-            | true, v -> ValueSome v
-            | _ -> ValueNone
+    let safeInt64 =
+        function
+        | Some(Int64 v) -> ValueSome v
+        | _ -> ValueNone
 
-    let safeInt (value: string option) : int =
-        match value with
-        | None -> 0
-        | Some s ->
-            match System.Int32.TryParse s with
-            | true, v -> v
-            | _ -> 0
+    let safeInt =
+        function
+        | Some(Int v) -> v
+        | _ -> 0
 
-    let safeFloat (value: string option) : float =
-        match value with
-        | None -> 0.0
-        | Some s ->
-            match System.Double.TryParse s with
-            | true, v -> v
-            | _ -> 0.0
+    let safeFloat =
+        function
+        | Some(Float v) -> v
+        | _ -> 0.0

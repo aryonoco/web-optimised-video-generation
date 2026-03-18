@@ -4,44 +4,45 @@ open System.IO
 open System.Threading
 open System.Threading.Tasks
 open Spectre.Console
+open SpectreCoff
 
-/// Spectre.Console display functions for CLI output.
+/// SpectreCoff display functions for CLI output.
 [<RequireQualifiedAccess>]
 module Display =
 
     let printError (msg: string) =
-        AnsiConsole.MarkupLine $"[red]Error:[/] %s{Markup.Escape msg}"
-
-    let printStyled (style: string) (msg: string) =
-        AnsiConsole.MarkupLine $"[%s{style}]%s{Markup.Escape msg}[/]"
+        Many [ MC(Color.Red, "Error:"); V $" %s{msg}" ] |> toConsole
 
     let displayAnalysis (infos: MediaFileInfo list) (userMode: Mode) =
-        let table = Table()
-        table.Title <- TableTitle "File Analysis"
-        table.AddColumn "File" |> ignore
-        table.AddColumn "Output Preview" |> ignore
-        table.AddColumn(TableColumn("Duration").RightAligned()) |> ignore
-        table.AddColumn(TableColumn("Size").RightAligned()) |> ignore
-        table.AddColumn "Resolution" |> ignore
-        table.AddColumn "Codec" |> ignore
-        table.AddColumn(TableColumn("Video Bitrate").RightAligned()) |> ignore
+        let rightAligned =
+            { defaultColumnLayout with
+                Alignment = Right }
 
-        for info in infos do
-            let fileMode = Discovery.effectiveMode info userMode
-            let config = ModeConfig.forMode fileMode
+        let columns =
+            [ column (C "File")
+              column (C "Output Preview")
+              column (C "Duration") |> withLayout rightAligned
+              column (C "Size") |> withLayout rightAligned
+              column (C "Resolution")
+              column (C "Codec")
+              column (C "Video Bitrate") |> withLayout rightAligned ]
 
-            table.AddRow(
-                Markup.Escape(MediaFilePath.name info.Path),
-                $"[dim]%s{Markup.Escape(Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)}[/]",
-                MediaFileInfo.durationDisplay info,
-                $"%.1f{MediaFileInfo.sizeMB info} MB",
-                VideoStream.resolutionLabel info.Video,
-                $"%s{info.Video.Codec} (%s{info.Video.Profile})",
-                VideoStream.bitrateKbps info.Video
-            )
-            |> ignore
+        let rows =
+            infos
+            |> List.map (fun info ->
+                let fileMode = Discovery.effectiveMode info userMode
+                let config = ModeConfig.forMode fileMode
 
-        AnsiConsole.Write table
+                Payloads
+                    [ V(MediaFilePath.name info.Path)
+                      C(Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
+                      V(MediaFileInfo.durationDisplay info)
+                      V $"%.1f{MediaFileInfo.sizeMB info} MB"
+                      V(VideoStream.resolutionLabel info.Video)
+                      V $"%s{info.Video.Codec} (%s{info.Video.Profile})"
+                      V(VideoStream.bitrateKbps info.Video) ])
+
+        table columns rows |> withTitle "File Analysis" |> toOutputPayload |> toConsole
 
     let displayRemuxWarnings (infos: MediaFileInfo list) =
         let warnings =
@@ -53,84 +54,155 @@ module Display =
                     let name = MediaFilePath.name info.Path
 
                     [ if info.Video.Codec <> "h264" then
-                          $"  [yellow]![/] %s{Markup.Escape name}: codec is %s{info.Video.Codec} (not H.264). Use --mode encode to re-encode."
+                          Many
+                              [ MC(Color.Yellow, "!")
+                                V
+                                    $" %s{name}: codec is %s{info.Video.Codec} (not H.264). Use --mode encode to re-encode." ]
                       elif not (info.Video.Profile.Contains "High") then
-                          $"  [yellow]![/] %s{Markup.Escape name}: profile is %s{info.Video.Profile} (not High). Use --mode encode to upgrade." ])
+                          Many
+                              [ MC(Color.Yellow, "!")
+                                V
+                                    $" %s{name}: profile is %s{info.Video.Profile} (not High). Use --mode encode to upgrade." ] ])
 
         if not warnings.IsEmpty then
-            AnsiConsole.WriteLine()
-
-            for w in warnings do
-                AnsiConsole.MarkupLine w
+            NL |> toConsole
+            warnings |> List.iter toConsole
 
     let printSummary (results: EncodeResult list) =
-        let table = Table()
-        table.Title <- TableTitle "Encoding Results"
-        table.AddColumn(TableColumn("File").NoWrap()) |> ignore
-        table.AddColumn(TableColumn("Output").NoWrap()) |> ignore
-        table.AddColumn(TableColumn("Input Size").RightAligned()) |> ignore
-        table.AddColumn(TableColumn("Output Size").RightAligned()) |> ignore
-        table.AddColumn(TableColumn("Change").RightAligned()) |> ignore
+        let rightAligned =
+            { defaultColumnLayout with
+                Alignment = Right }
+
+        let noWrap =
+            { defaultColumnLayout with
+                Wrap = false }
+
+        let columns =
+            [ column (C "File") |> withLayout noWrap
+              column (C "Output") |> withLayout noWrap
+              column (C "Input Size") |> withLayout rightAligned
+              column (C "Output Size") |> withLayout rightAligned
+              column (C "Change") |> withLayout rightAligned ]
+
+        let dataRows =
+            results
+            |> List.map (fun r ->
+                let inputMb = float r.InputSize / float Constants.BytesPerMB
+                let outputMb = float r.OutputSize / float Constants.BytesPerMB
+
+                let color =
+                    if EncodeResult.savingsPct r < 0.0 then
+                        Color.Green
+                    else
+                        Color.Red
+
+                Payloads
+                    [ V(MediaFilePath.name r.InputPath)
+                      V(Path.GetFileName r.OutputPath |> NullSafe.path)
+                      V $"%.1f{inputMb} MB"
+                      V $"%.1f{outputMb} MB"
+                      MC(color, EncodeResult.savingsDisplay r) ])
 
         let struct (totalInput, totalOutput) =
             (struct (0L, 0L), results)
-            ||> List.fold (fun (struct (ti, to')) r ->
-                let inputMb = float r.InputSize / float Constants.BytesPerMB
-                let outputMb = float r.OutputSize / float Constants.BytesPerMB
-                let style = if EncodeResult.savingsPct r < 0.0 then "green" else "red"
+            ||> List.fold (fun (struct (ti, to')) r -> struct (ti + r.InputSize, to' + r.OutputSize))
 
-                table.AddRow(
-                    Markup.Escape(MediaFilePath.name r.InputPath),
-                    Markup.Escape(Path.GetFileName r.OutputPath |> NullSafe.path),
-                    $"%.1f{inputMb} MB",
-                    $"%.1f{outputMb} MB",
-                    $"[%s{style}]%s{EncodeResult.savingsDisplay r}[/%s{style}]"
-                )
-                |> ignore
+        let allRows =
+            if totalInput > 0L then
+                let totalInputMb = float totalInput / float Constants.BytesPerMB
+                let totalOutputMb = float totalOutput / float Constants.BytesPerMB
+                let totalPct = float (totalOutput - totalInput) / float totalInput * 100.0
+                let sign = if totalPct > 0.0 then "+" else ""
+                let color = if totalPct < 0.0 then Color.Green else Color.Red
 
-                struct (ti + r.InputSize, to' + r.OutputSize))
+                let totalsRow =
+                    Payloads
+                        [ P "Total"
+                          V ""
+                          P $"%.1f{totalInputMb} MB"
+                          P $"%.1f{totalOutputMb} MB"
+                          MC(color, $"%s{sign}%.1f{totalPct}%%") ]
 
-        if totalInput > 0L then
-            let totalInputMb = float totalInput / float Constants.BytesPerMB
-            let totalOutputMb = float totalOutput / float Constants.BytesPerMB
-            let totalPct = float (totalOutput - totalInput) / float totalInput * 100.0
-            let sign = if totalPct > 0.0 then "+" else ""
-            let style = if totalPct < 0.0 then "green" else "red"
+                dataRows @ [ totalsRow ]
+            else
+                dataRows
 
-            table.AddRow(
-                "[bold]Total[/]",
-                "",
-                $"[bold]%.1f{totalInputMb} MB[/]",
-                $"[bold]%.1f{totalOutputMb} MB[/]",
-                $"[bold][%s{style}]%s{sign}%.1f{totalPct}%%[/%s{style}][/]"
-            )
-            |> ignore
+        table columns allRows
+        |> withTitle "Encoding Results"
+        |> toOutputPayload
+        |> toConsole
 
-        AnsiConsole.Write table
+    let private verifyOne (result: EncodeResult, fileMode: Mode) : Task<bool> =
+        task {
+            let config = ModeConfig.forMode fileMode
+            let! verifyResult = config.Verifier result.OutputPath
+            let name = Path.GetFileName result.OutputPath |> NullSafe.path
+
+            match verifyResult with
+            | Ok() ->
+                Many [ MC(Color.Green, "\u2713"); V $" %s{name}" ] |> toConsole
+                return true
+            | Error issues ->
+                Many [ MC(Color.Red, "\u2717"); V $" %s{name}" ] |> toConsole
+
+                for issue in issues do
+                    Many [ MC(Color.Red, "  \u2192"); V $" %s{issue}" ] |> toConsole
+
+                return false
+        }
 
     let displayVerification (results: (EncodeResult * Mode) list) : Task<bool> =
         task {
-            AnsiConsole.MarkupLine "\n[bold]Verifying outputs...[/]"
-            let mutable allOk = true
+            P "Verifying outputs..." |> toConsole
 
-            for result, fileMode in results do
-                let config = ModeConfig.forMode fileMode
-                let! verifyResult = config.Verifier result.OutputPath
+            let! outcomes = results |> List.map verifyOne |> Task.WhenAll
 
-                match verifyResult with
-                | Ok() ->
-                    AnsiConsole.MarkupLine
-                        $"  [green]\u2713[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> NullSafe.path)}"
-                | Error issues ->
-                    allOk <- false
+            return outcomes |> Array.forall id
+        }
 
-                    AnsiConsole.MarkupLine
-                        $"  [red]\u2717[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> NullSafe.path)}"
+    /// Corrected SpectreCoff.Progress.startCustom — upstream ignores AutoClear/HideCompleted.
+    let private startProgress (template: ProgressTemplate) (operation: ProgressOperation<'T>) =
+        AnsiConsole
+            .Progress()
+            .AutoClear(template.AutoClear)
+            .AutoRefresh(template.AutoRefresh)
+            .HideCompleted(template.HideCompleted)
+            .Columns(template.Columns |> List.toArray)
+            .StartAsync(operation)
 
-                    for issue in issues do
-                        AnsiConsole.MarkupLine $"    [red]\u2192[/] %s{Markup.Escape issue}"
+    let private processWithContext
+        (infos: MediaFileInfo list)
+        (processOne:
+            MediaFileInfo -> Mode -> (float -> unit) -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
+        (userMode: Mode)
+        (ct: CancellationToken)
+        (ctx: ProgressContext)
+        : Task<Result<ProcessResult list, AppError>> =
+        task {
+            let mutable acc = []
+            let mutable idx = 1
+            let mutable error: AppError voption = ValueNone
 
-            return allOk
+            for info in infos do
+                if error.IsNone then
+                    let fileMode = Discovery.effectiveMode info userMode
+
+                    let description = $"[%d{idx}/%d{infos.Length}] %s{MediaFilePath.name info.Path}"
+
+                    let progressTask = realizeIn ctx (HotCustomTask(info.DurationSecs, description))
+
+                    let onProgress elapsed = progressTask.Value <- elapsed
+
+                    match! processOne info fileMode onProgress ct with
+                    | Ok encodeResult ->
+                        progressTask.Value <- info.DurationSecs
+                        acc <- (encodeResult, fileMode) :: acc
+                        idx <- idx + 1
+                    | Error e -> error <- ValueSome e
+
+            match error with
+            | ValueSome e -> return Error e
+            | ValueNone -> return Ok(List.rev acc)
         }
 
     let withProgress
@@ -140,45 +212,17 @@ module Display =
         (userMode: Mode)
         (ct: CancellationToken)
         : Task<Result<ProcessResult list, AppError>> =
-        task {
-            let mutable results: ProcessResult list = []
-            let mutable error: AppError voption = ValueNone
 
-            do!
-                AnsiConsole
-                    .Progress()
-                    .AutoClear(false)
-                    .HideCompleted(false)
-                    .Columns(
-                        SpinnerColumn(),
-                        TaskDescriptionColumn(),
-                        ProgressBarColumn(),
-                        PercentageColumn(),
-                        ElapsedTimeColumn(),
-                        RemainingTimeColumn()
-                    )
-                    .StartAsync(fun ctx ->
-                        task {
-                            for idx in 0 .. infos.Length - 1 do
-                                if error.IsNone then
-                                    let info = infos[idx]
-                                    let fileMode = Discovery.effectiveMode info userMode
+        let template =
+            { AutoClear = false
+              AutoRefresh = true
+              HideCompleted = false
+              Columns =
+                [ SpinnerColumn()
+                  TaskDescriptionColumn()
+                  ProgressBarColumn()
+                  PercentageColumn()
+                  ElapsedTimeColumn()
+                  RemainingTimeColumn() ] }
 
-                                    let description =
-                                        $"[%d{idx + 1}/%d{infos.Length}] %s{MediaFilePath.name info.Path}"
-
-                                    let progressTask = ctx.AddTask(description, maxValue = info.DurationSecs)
-
-                                    let onProgress elapsed = progressTask.Value <- elapsed
-
-                                    match! processOne info fileMode onProgress ct with
-                                    | Ok encodeResult ->
-                                        progressTask.Value <- info.DurationSecs
-                                        results <- (encodeResult, fileMode) :: results
-                                    | Error e -> error <- ValueSome e
-                        })
-
-            match error with
-            | ValueSome e -> return Error e
-            | ValueNone -> return Ok(List.rev results)
-        }
+        startProgress template (processWithContext infos processOne userMode ct)

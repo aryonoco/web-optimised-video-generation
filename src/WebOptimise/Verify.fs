@@ -20,17 +20,18 @@ module Verify =
                     | Json.Prop "codec_type" (Json.Str "video") -> true
                     | _ -> false
                 )
-                |> Option.bind (fun s ->
+                |> ValueOption.ofOption
+                |> ValueOption.bind (fun s ->
                     match s with
-                    | Json.Prop "profile" (Json.Str p) -> Some(VideoProfile.ofString p)
-                    | _ -> None
+                    | Json.Prop "profile" (Json.Str p) -> ValueSome(VideoProfile.ofString p)
+                    | _ -> ValueNone
                 )
-            | _ -> None
+            | _ -> ValueNone
 
         match profile with
-        | None -> Error VerificationIssue.NoVideoStream
-        | Some VideoProfile.High -> Ok()
-        | Some other -> Error(VerificationIssue.ProfileMismatch("High", VideoProfile.displayName other))
+        | ValueNone -> Error VerificationIssue.NoVideoStream
+        | ValueSome VideoProfile.High -> Ok()
+        | ValueSome other -> Error(VerificationIssue.ProfileMismatch("High", VideoProfile.displayName other))
 
     let validateFaststart (stderr: string) : Result<unit, VerificationIssue> =
         let moovPos =
@@ -158,24 +159,10 @@ module Verify =
 
             Task.FromResult result
 
-    // Composite verifiers
-
     let verifyEncoded (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
         taskValidation {
             let! _ = checkVideoProfile env path
             and! _ = checkFaststart env path
             and! _ = checkKeyframeIntervals env path
-            return ()
-        }
-
-    let verifyRemuxed (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
-        taskValidation {
-            let! _ = checkFaststart env path
-            return ()
-        }
-
-    let verifyWebm (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
-        taskValidation {
-            let! _ = checkCuesFront env path
             return ()
         }

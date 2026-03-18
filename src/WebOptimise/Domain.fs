@@ -127,14 +127,16 @@ module NonEmpty =
         : Task<Result<NonEmpty<'U>, NonEmpty<'E>>>
         =
         task {
-            let! results = (h :: t) |> List.traverseTaskResultA f
+            let! headResult = f h
+            let! tailResults = List.traverseTaskResultA f t
 
             return
-                match results with
-                | Ok(x :: xs) -> Ok(NonEmpty(x, xs))
-                | Error(e :: es) -> Error(NonEmpty(e, es))
-                | Ok []
-                | Error [] -> invalidOp "traverseTaskResultA: non-empty input produced empty output"
+                match headResult, tailResults with
+                | Ok hOk, Ok tOk -> Ok(NonEmpty(hOk, tOk))
+                | Error e, Error es -> Error(NonEmpty(e, es))
+                | Error e, Ok _ -> Error(NonEmpty(e, []))
+                | Ok _, Error(e :: es) -> Error(NonEmpty(e, es))
+                | Ok hOk, Error [] -> Ok(NonEmpty(hOk, []))
         }
 
 [<Struct>]
@@ -183,7 +185,7 @@ module StagingDir =
 
     let value (StagingDir d) = d
 
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
 type ResolvedPath =
     | File of fullPath: string * container: ContainerFormat
     | UnsupportedFile of fullPath: string * ext: string

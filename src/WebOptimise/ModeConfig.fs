@@ -21,7 +21,7 @@ module ModeConfig =
 
     let private remuxConfig = {
         CmdBuilder = Commands.buildRemux
-        Verifier = Verify.verifyRemuxed
+        Verifier = Verify.checkFaststart
         OutputExt = OutputExtension.mp4
         ErrorVerb = "Remuxing"
         Label = "remux"
@@ -39,7 +39,7 @@ module ModeConfig =
 
     let private webmConfig = {
         CmdBuilder = Commands.buildWebmRemux
-        Verifier = Verify.verifyWebm
+        Verifier = Verify.checkCuesFront
         OutputExt = OutputExtension.webm
         ErrorVerb = "WebM remuxing"
         Label = "webm"

@@ -6,9 +6,6 @@ type VideoAction =
     | EncodeX264 of X264Settings
 
 [<Struct; RequireQualifiedAccess>]
-type AudioAction = | Copy
-
-[<Struct; RequireQualifiedAccess>]
 type Container =
     | Mp4Faststart
     | WebmDash of clusterTimeLimit: int
@@ -18,7 +15,6 @@ type FfmpegCmd = {
     Input: MediaFilePath
     Output: OutputPath
     Video: VideoAction
-    Audio: AudioAction
     Container: Container
     StripMetadata: bool
     StripChapters: bool

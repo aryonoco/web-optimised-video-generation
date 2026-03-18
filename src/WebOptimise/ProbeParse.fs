@@ -6,6 +6,9 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module ProbeParse =
 
+    let private missingField (path: MediaFilePath) (field: ProbeField) =
+        Error(AppError.Probe(ProbeFailure.MissingField(field, path)))
+
     let findStream (codecType: string) (root: JsonElement) : JsonElement voption =
         match root with
         | Json.Prop "streams" (Json.Arr streams) ->
@@ -23,25 +26,25 @@ module ProbeParse =
             let! codec =
                 match elem with
                 | Json.Prop "codec_name" (Json.Str s) -> Ok(VideoCodec.ofString s)
-                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.VideoCodec, path)))
+                | _ -> missingField path ProbeField.VideoCodec
 
             let! width =
                 match elem with
                 | Json.Prop "width" (Json.JInt w) when w > 0 -> Ok w
-                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.VideoWidth, path)))
+                | _ -> missingField path ProbeField.VideoWidth
 
             let! height =
                 match elem with
                 | Json.Prop "height" (Json.JInt h) when h > 0 -> Ok h
-                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.VideoHeight, path)))
+                | _ -> missingField path ProbeField.VideoHeight
 
             let! frameRate =
                 match elem with
                 | Json.Prop "r_frame_rate" (Json.Str s) ->
                     match Parse.frameRate s with
                     | ValueSome f when f > 0.0 -> Ok f
-                    | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.FrameRate, path)))
-                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.FrameRate, path)))
+                    | _ -> missingField path ProbeField.FrameRate
+                | _ -> missingField path ProbeField.FrameRate
 
             let profile =
                 match elem with
@@ -68,7 +71,7 @@ module ProbeParse =
             let! codec =
                 match elem with
                 | Json.Prop "codec_name" (Json.Str s) -> Ok(AudioCodec.ofString s)
-                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.AudioCodec, path)))
+                | _ -> missingField path ProbeField.AudioCodec
 
             return {
                 Codec = codec
@@ -95,17 +98,17 @@ module ProbeParse =
             let! fmt =
                 match root with
                 | Json.Prop "format" fmt -> Ok fmt
-                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.FormatSection, path)))
+                | _ -> missingField path ProbeField.FormatSection
 
             let! duration =
                 match fmt with
                 | Json.Prop "duration" (Json.Str(Float d)) when d > 0.0 -> Ok d
-                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.Duration, path)))
+                | _ -> missingField path ProbeField.Duration
 
             let! size =
                 match fmt with
                 | Json.Prop "size" (Json.Str(Float s)) when s > 0.0 -> Ok(int64 s)
-                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.FileSize, path)))
+                | _ -> missingField path ProbeField.FileSize
 
             return struct (duration, size)
         }
@@ -115,7 +118,7 @@ module ProbeParse =
             let! videoElem =
                 match findStream "video" root with
                 | ValueSome elem -> Ok elem
-                | ValueNone -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.VideoStream, path)))
+                | ValueNone -> missingField path ProbeField.VideoStream
 
             let! video = parseVideoStream path videoElem
 

@@ -6,9 +6,6 @@ type VideoAction =
     | EncodeX264 of X264Settings
 
 [<Struct; RequireQualifiedAccess>]
-type AudioAction = | Copy
-
-[<Struct; RequireQualifiedAccess>]
 type Container =
     | Mp4Faststart
     | WebmDash of clusterTimeLimit: int
@@ -18,7 +15,6 @@ type FfmpegCmd = {
     Input: MediaFilePath
     Output: OutputPath
     Video: VideoAction
-    Audio: AudioAction
     Container: Container
     StripMetadata: bool
     StripChapters: bool
@@ -113,7 +109,6 @@ module Commands =
                     BFrames = Constants.BFrames
                     X264Params = Constants.X264Params
                 }
-            Audio = AudioAction.Copy
             Container = Container.Mp4Faststart
             StripMetadata = true
             StripChapters = false
@@ -123,7 +118,6 @@ module Commands =
         Input = info.Path
         Output = output
         Video = VideoAction.Copy
-        Audio = AudioAction.Copy
         Container = Container.Mp4Faststart
         StripMetadata = true
         StripChapters = true
@@ -133,7 +127,6 @@ module Commands =
         Input = info.Path
         Output = output
         Video = VideoAction.Copy
-        Audio = AudioAction.Copy
         Container = Container.WebmDash 2000
         StripMetadata = true
         StripChapters = true

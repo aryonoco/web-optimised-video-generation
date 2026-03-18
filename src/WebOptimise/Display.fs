@@ -108,28 +108,30 @@ module Display =
 
         AnsiConsole.Write table
 
-    let displayVerification (results: (EncodeResult * Mode) list) : bool =
-        AnsiConsole.MarkupLine "\n[bold]Verifying outputs...[/]"
-        let mutable allOk = true
+    let displayVerification (results: (EncodeResult * Mode) list) : Task<bool> =
+        task {
+            AnsiConsole.MarkupLine "\n[bold]Verifying outputs...[/]"
+            let mutable allOk = true
 
-        for result, fileMode in results do
-            let config = ModeConfig.forMode fileMode
-            let verifyResult = config.Verifier result.OutputPath
+            for result, fileMode in results do
+                let config = ModeConfig.forMode fileMode
+                let! verifyResult = config.Verifier result.OutputPath
 
-            match verifyResult with
-            | Ok() ->
-                AnsiConsole.MarkupLine
-                    $"  [green]\u2713[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> NullSafe.path)}"
-            | Error issues ->
-                allOk <- false
+                match verifyResult with
+                | Ok() ->
+                    AnsiConsole.MarkupLine
+                        $"  [green]\u2713[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> NullSafe.path)}"
+                | Error issues ->
+                    allOk <- false
 
-                AnsiConsole.MarkupLine
-                    $"  [red]\u2717[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> NullSafe.path)}"
+                    AnsiConsole.MarkupLine
+                        $"  [red]\u2717[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> NullSafe.path)}"
 
-                for issue in issues do
-                    AnsiConsole.MarkupLine $"    [red]\u2192[/] %s{Markup.Escape issue}"
+                    for issue in issues do
+                        AnsiConsole.MarkupLine $"    [red]\u2192[/] %s{Markup.Escape issue}"
 
-        allOk
+            return allOk
+        }
 
     let withProgress
         (infos: MediaFileInfo list)

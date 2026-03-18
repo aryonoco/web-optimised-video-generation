@@ -71,49 +71,53 @@ module Cli =
         with :? ArguParseException as ex ->
             Error(AppError.ValidationError ex.Message)
 
-    let private validateEnvironment () : Result<unit, AppError> =
-        let check (tool: string) =
-            try
-                Cli.Wrap(tool).WithArguments([ "-version" ]).ExecuteBufferedAsync().GetAwaiter().GetResult()
-                |> ignore
+    let private validateEnvironment () : Task<Result<unit, AppError>> =
+        let check (tool: string) : Task<Result<unit, AppError>> =
+            task {
+                try
+                    let! _ = Cli.Wrap(tool).WithArguments([ "-version" ]).ExecuteBufferedAsync()
+                    return Ok()
+                with
+                | :? System.ComponentModel.Win32Exception ->
+                    return Error(AppError.ValidationError $"%s{tool} not found in PATH")
+                | ex -> return Error(AppError.ValidationError $"%s{tool} failed to run: %s{ex.Message}")
+            }
 
-                Ok()
-            with
-            | :? System.ComponentModel.Win32Exception -> Error(AppError.ValidationError $"%s{tool} not found in PATH")
-            | ex -> Error(AppError.ValidationError $"%s{tool} failed to run: %s{ex.Message}")
-
-        result {
+        taskResult {
             do! check "ffmpeg"
             do! check "ffprobe"
         }
 
-    let private probeFile (path: MediaFilePath) : Result<MediaFileInfo, AppError> =
-        try
-            let probeResult =
-                CliWrap.Cli
-                    .Wrap("ffprobe")
-                    .WithArguments(
-                        [ "-v"
-                          "quiet"
-                          "-print_format"
-                          "json"
-                          "-show_streams"
-                          "-show_format"
-                          MediaFilePath.value path ]
-                    )
-                    .WithValidation(CommandResultValidation.None)
-                    .ExecuteBufferedAsync()
-                    .GetAwaiter()
-                    .GetResult()
+    let private probeFile (path: MediaFilePath) : Task<Result<MediaFileInfo, AppError>> =
+        task {
+            try
+                let! probeResult =
+                    CliWrap.Cli
+                        .Wrap("ffprobe")
+                        .WithArguments(
+                            [ "-v"
+                              "quiet"
+                              "-print_format"
+                              "json"
+                              "-show_streams"
+                              "-show_format"
+                              MediaFilePath.value path ]
+                        )
+                        .WithValidation(CommandResultValidation.None)
+                        .ExecuteBufferedAsync()
 
-            if probeResult.ExitCode <> 0 then
-                Error(
-                    AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{probeResult.StandardError}"
-                )
-            else
-                ProbeParse.fromJson path probeResult.StandardOutput
-        with ex ->
-            Error(AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{ex.Message}")
+                if probeResult.ExitCode <> 0 then
+                    return
+                        Error(
+                            AppError.ProbeError
+                                $"ffprobe failed for %s{MediaFilePath.name path}: %s{probeResult.StandardError}"
+                        )
+                else
+                    return ProbeParse.fromJson path probeResult.StandardOutput
+            with ex ->
+                return
+                    Error(AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{ex.Message}")
+        }
 
     let private processOne
         (args: ParsedArgs)
@@ -128,7 +132,7 @@ module Cli =
     let run (argv: string array) : Task<int> =
         task {
             let pipeline =
-                result {
+                taskResult {
                     let! args = parseArgs argv
                     do! validateEnvironment ()
                     let! files = Discovery.findFiles args.Paths
@@ -140,7 +144,7 @@ module Cli =
 
                         do! Discovery.rejectMkvEncode files args.Mode
 
-                        let! infos = files |> List.map probeFile |> List.sequenceResultM
+                        let! infos = files |> List.traverseTaskResultM probeFile
 
                         do! Discovery.validateMkvCodecs infos
 
@@ -172,7 +176,9 @@ module Cli =
                             return Some(args, infos, effectiveModes)
                 }
 
-            match pipeline with
+            let! pipelineResult = pipeline
+
+            match pipelineResult with
             | Error e ->
                 Display.printError (AppError.message e)
                 return 1
@@ -191,7 +197,7 @@ module Cli =
                     Display.printError (AppError.message e)
                     return 1
                 | Ok resultsWithModes ->
-                    let allOk = Display.displayVerification resultsWithModes
+                    let! allOk = Display.displayVerification resultsWithModes
 
                     AnsiConsole.WriteLine()
                     Display.printSummary (resultsWithModes |> List.map fst)

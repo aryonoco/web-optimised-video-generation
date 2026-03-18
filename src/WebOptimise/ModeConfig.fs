@@ -1,10 +1,11 @@
 namespace WebOptimise
 
 open System.Collections.Frozen
+open System.Threading.Tasks
 
 type CmdBuilder = MediaFileInfo -> string -> string list
 
-type Verifier = string -> Result<unit, string list>
+type Verifier = string -> Task<Result<unit, string list>>
 
 [<NoComparison; NoEquality>]
 type ModeConfig =

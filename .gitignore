@@ -94,6 +94,9 @@ id_ed25519
 # Root-level generated web media (allows tracking media in subdirectories)
 /*.mp4
 /*.webm
+/*.mkv
+/*.mov
+/*.m4v
 
 # -----------------------------------------------------------------------------
 # Jupyter Notebooks

@@ -1,0 +1,70 @@
+"""Constants for web-optimised video processing."""
+
+from typing import Final
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  FILE EXTENSIONS & OUTPUT
+# ══════════════════════════════════════════════════════════════════════════════
+
+SUPPORTED_EXTENSIONS: Final[frozenset[str]] = frozenset({".mp4", ".m4v", ".mov", ".mkv"})
+OUTPUT_DIR_NAME: Final[str] = "web-optimised"
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  PROCESSING MODES
+# ══════════════════════════════════════════════════════════════════════════════
+
+MODE_REMUX: Final[str] = "remux"
+MODE_ENCODE: Final[str] = "encode"
+MODE_WEBM: Final[str] = "webm"
+
+MKV_EXTENSIONS: Final[frozenset[str]] = frozenset({".mkv"})
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  x264 ENCODING SETTINGS
+# ══════════════════════════════════════════════════════════════════════════════
+
+CRF: Final[int] = 25
+PRESET: Final[str] = "slower"
+PROFILE: Final[str] = "high"
+LEVEL: Final[str] = "4.0"
+TARGET_FPS: Final[int] = 16
+KEYFRAME_INTERVAL_SECS: Final[int] = 2
+B_FRAMES: Final[int] = 3
+X264_PARAMS: Final[str] = "deblock=-1,-1"
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  RESOLUTION THRESHOLDS
+# ══════════════════════════════════════════════════════════════════════════════
+
+WIDTH_4K: Final[int] = 3840
+WIDTH_1440P: Final[int] = 2560
+WIDTH_1080P: Final[int] = 1920
+WIDTH_720P: Final[int] = 1280
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  VERIFICATION THRESHOLDS
+# ══════════════════════════════════════════════════════════════════════════════
+
+MIN_KEYFRAMES_FOR_CHECK: Final[int] = 2
+MAX_KEYFRAME_SAMPLE: Final[int] = 10
+MAX_ACCEPTABLE_KEYFRAME_INTERVAL: Final[float] = 3.0
+MAX_WEB_FRAME_RATE: Final[int] = 30
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  EBML ELEMENT IDs (WebM verification)
+# ══════════════════════════════════════════════════════════════════════════════
+
+EBML_CUES_ID: Final[bytes] = b"\x1c\x53\xbb\x6b"
+EBML_CLUSTER_ID: Final[bytes] = b"\x1f\x43\xb6\x75"
+EBML_SEEKHEAD_SKIP: Final[int] = 200
+WEBM_HEADER_READ_SIZE: Final[int] = 8192
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  UNIT CONVERSION
+# ══════════════════════════════════════════════════════════════════════════════
+
+BYTES_PER_MB: Final[int] = 1024 * 1024
+MICROSECONDS_PER_SECOND: Final[int] = 1_000_000
+SECONDS_PER_HOUR: Final[int] = 3600
+SECONDS_PER_MINUTE: Final[int] = 60
+BITS_PER_KBIT: Final[int] = 1000

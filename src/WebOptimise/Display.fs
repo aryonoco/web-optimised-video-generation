@@ -38,7 +38,10 @@ module Display =
 
                 Payloads [
                     V(MediaFilePath.name info.Path)
-                    C(Discovery.sanitiseFilename (Guid.NewGuid()) (MediaFilePath.name info.Path) config.OutputExt)
+                    C(
+                        Discovery.slugify (MediaFilePath.name info.Path)
+                        + OutputExtension.value config.OutputExt
+                    )
                     V(MediaFileInfo.durationDisplay info)
                     V $"%.1f{MediaFileInfo.sizeMB info} MB"
                     V(VideoStream.resolutionLabel info.Video)

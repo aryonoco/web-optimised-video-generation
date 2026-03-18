@@ -54,10 +54,11 @@ module Ebml =
             if width = 0 || pos + width > data.Length then
                 ValueNone
             else
-                let mutable value = 0L
+                let bytes = data.Slice(pos, width).ToArray()
 
-                for i in pos .. pos + width - 1 do
-                    value <- (value <<< 8) ||| int64 data[i]
+                let value =
+                    (0L, bytes)
+                    ||> Array.fold (fun acc b -> (acc <<< 8) ||| int64 b)
 
                 let mask = (1L <<< (8 * width)) - 1L
                 let masked = value &&& (mask >>> width)
@@ -89,11 +90,6 @@ module Ebml =
         | CuesFound
         | ScanError of scanMsg: string
 
-    let private isScanning =
-        function
-        | Scanning _ -> true
-        | _ -> false
-
     let private stepScan (data: ReadOnlySpan<byte>) (state: ScanState) : ScanState =
         match state with
         | CuesFound
@@ -118,16 +114,15 @@ module Ebml =
                         else
                             Scanning(eDataStart + eSize)
 
-    let private runScan (data: ReadOnlySpan<byte>) (startPos: int) : Result<unit, string> =
-        let mutable state = Scanning startPos
-
-        while isScanning state do
-            state <- stepScan data state
-
+    [<TailCall>]
+    let rec private scanLoop (data: ReadOnlySpan<byte>) (state: ScanState) : Result<unit, string> =
         match state with
         | CuesFound -> Ok()
         | ScanError msg -> Error msg
-        | Scanning _ -> Error "Unexpected scan state"
+        | Scanning _ -> scanLoop data (stepScan data state)
+
+    let private runScan (data: ReadOnlySpan<byte>) (startPos: int) : Result<unit, string> =
+        scanLoop data (Scanning startPos)
 
     /// Check that EBML Cues element appears before the first Cluster element.
     /// Returns Ok () if Cues is front-loaded, Error with a message otherwise.

@@ -1,6 +1,7 @@
 namespace WebOptimise
 
 open System.Text
+open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
 
@@ -35,3 +36,4 @@ module Shell =
     val fileExists: path: string -> bool
     val deleteFile: path: string -> Result<unit, ShellError>
     val readFileHeader: path: string -> maxBytes: int -> Result<byte array, ShellError>
+    val parseJson: json: string -> Result<JsonElement, string>

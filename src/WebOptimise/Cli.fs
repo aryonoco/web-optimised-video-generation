@@ -117,7 +117,7 @@ module Cli =
                     return
                         Error(AppError.Probe(ProbeFailure.NonZeroExit(probeResult.ExitCode, probeResult.StdErr, path)))
                 else
-                    match Json.tryParse probeResult.StdOut with
+                    match env.ParseJson probeResult.StdOut with
                     | Error msg -> return Error(AppError.Probe(ProbeFailure.JsonParseFailed(msg, path)))
                     | Ok root -> return ProbeParse.fromJson path root
         }
@@ -142,30 +142,24 @@ module Cli =
         taskResult {
             let! infos =
                 discovered.Files
-                |> NonEmpty.toList
-                |> List.traverseTaskResultA (probeFile env)
+                |> NonEmpty.traverseTaskResultA (probeFile env)
                 |> TaskResult.mapError (fun errors ->
-                    match errors with
-                    | [ single ] -> single
-                    | h :: t -> AppError.Multiple(NonEmpty(h, t))
-                    | [] -> AppError.Validation ValidationFailure.NoPaths
+                    match NonEmpty.length errors with
+                    | 1 -> NonEmpty.head errors
+                    | _ -> AppError.Multiple errors
                 )
 
-            do! Discovery.validateMkvCodecs infos
+            do! Discovery.validateMkvCodecs (NonEmpty.toList infos)
 
             let effectiveModes =
                 infos
+                |> NonEmpty.toList
                 |> List.map (fun i -> Discovery.effectiveMode i discovered.Input.Mode)
                 |> List.distinct
 
-            let! infosNel =
-                match NonEmpty.ofList infos with
-                | ValueSome nel -> Ok nel
-                | ValueNone -> Error(AppError.Validation ValidationFailure.NoSupportedFiles)
-
             return {
                 Input = discovered.Input
-                Infos = infosNel
+                Infos = infos
                 Modes = effectiveModes
             }
         }

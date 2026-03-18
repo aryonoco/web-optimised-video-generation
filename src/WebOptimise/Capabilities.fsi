@@ -1,6 +1,7 @@
 namespace WebOptimise
 
 open System.Text
+open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
 
@@ -17,6 +18,7 @@ type Env = {
     FileExists: string -> bool
     DeleteFile: string -> Result<unit, ShellError>
     ReadFileHeader: string -> int -> Result<byte array, ShellError>
+    ParseJson: string -> Result<JsonElement, string>
 }
 
 [<RequireQualifiedAccess>]

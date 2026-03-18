@@ -3,6 +3,7 @@ namespace WebOptimise
 open System
 open System.IO
 open System.Text.Json
+open System.Threading.Tasks
 open FsToolkit.ErrorHandling
 
 [<RequireQualifiedAccess>]
@@ -97,6 +98,20 @@ module NonEmpty =
             let! h' = f h
             let! t' = List.traverseResultM f t
             return NonEmpty(h', t')
+        }
+
+    let traverseTaskResultA
+        (f: 'T -> Task<Result<'U, 'E>>)
+        (NonEmpty(h, t))
+        : Task<Result<NonEmpty<'U>, NonEmpty<'E>>>
+        =
+        task {
+            let! results = (h :: t) |> List.traverseTaskResultA f
+
+            return
+                results
+                |> Result.map (fun xs -> NonEmpty(List.head xs, List.tail xs))
+                |> Result.mapError (fun es -> NonEmpty(List.head es, List.tail es))
         }
 
 [<Struct>]
@@ -536,12 +551,6 @@ module Json =
             ValueSome(seq { for i in 0 .. elem.GetArrayLength() - 1 -> elem[i] })
         else
             ValueNone
-
-    let tryParse (json: string) : Result<JsonElement, string> =
-        try
-            Ok(JsonElement.Parse(json))
-        with ex ->
-            Error ex.Message
 
 // Pure helpers
 

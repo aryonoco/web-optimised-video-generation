@@ -5,6 +5,7 @@ open System.Text
 open System.Threading
 open System.Threading.Tasks
 open CliWrap
+open System.Text.Json
 open CliWrap.Buffered
 
 [<Struct; NoComparison; NoEquality>]
@@ -124,3 +125,9 @@ module Shell =
                 Ok(buf[.. bytesRead - 1])
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))
+
+    let parseJson (json: string) : Result<JsonElement, string> =
+        try
+            Ok(JsonElement.Parse(json))
+        with ex ->
+            Error ex.Message

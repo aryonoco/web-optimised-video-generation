@@ -5,9 +5,9 @@ import uuid
 from pathlib import Path
 
 from web_optimise._constants import MKV_EXTENSIONS
-from web_optimise._constants import MODE_WEBM
 from web_optimise._constants import OUTPUT_DIR_NAME
 from web_optimise._constants import SUPPORTED_EXTENSIONS
+from web_optimise._constants import Mode
 from web_optimise._types import FileInfo
 from web_optimise._types import ValidationError
 
@@ -42,15 +42,15 @@ def find_files(paths: tuple[Path, ...], /) -> tuple[Path, ...]:
     return tuple(found)
 
 
-def effective_mode(info: FileInfo, *, user_mode: str) -> str:
+def effective_mode(info: FileInfo, *, user_mode: Mode) -> Mode:
     """
     Determine the processing mode for a file based on its container type.
 
-    MKV files always use MODE_WEBM (auto-detected).
+    MKV files always use Mode.WEBM (auto-detected).
     MP4/M4V/MOV files use the user-specified mode.
     """
     if info.path.suffix.lower() in MKV_EXTENSIONS:
-        return MODE_WEBM
+        return Mode.WEBM
     return user_mode
 
 

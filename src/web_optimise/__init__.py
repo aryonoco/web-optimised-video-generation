@@ -6,6 +6,7 @@ from web_optimise._cli import print_summary
 from web_optimise._commands import build_ffmpeg_cmd
 from web_optimise._commands import build_remux_cmd
 from web_optimise._commands import build_webm_remux_cmd
+from web_optimise._constants import Mode
 from web_optimise._discovery import find_files
 from web_optimise._modes import MODE_CONFIGS
 from web_optimise._modes import ModeConfig
@@ -34,6 +35,7 @@ __all__ = [
     "EncodeError",
     "EncodeResult",
     "FileInfo",
+    "Mode",
     "ModeConfig",
     "ProbeError",
     "ProcessResult",

@@ -7,9 +7,7 @@ from typing import Final
 from web_optimise._commands import build_ffmpeg_cmd
 from web_optimise._commands import build_remux_cmd
 from web_optimise._commands import build_webm_remux_cmd
-from web_optimise._constants import MODE_ENCODE
-from web_optimise._constants import MODE_REMUX
-from web_optimise._constants import MODE_WEBM
+from web_optimise._constants import Mode
 from web_optimise._verify import verify_output
 from web_optimise._verify import verify_remux_output
 from web_optimise._verify import verify_webm_output
@@ -31,8 +29,8 @@ class ModeConfig:
     completion_verb: str
 
 
-MODE_CONFIGS: Final[dict[str, ModeConfig]] = {
-    MODE_REMUX: ModeConfig(
+MODE_CONFIGS: Final[dict[Mode, ModeConfig]] = {
+    Mode.REMUX: ModeConfig(
         cmd_builder=build_remux_cmd,
         verifier=verify_remux_output,
         output_ext=".mp4",
@@ -40,7 +38,7 @@ MODE_CONFIGS: Final[dict[str, ModeConfig]] = {
         label="remux",
         completion_verb="optimised",
     ),
-    MODE_ENCODE: ModeConfig(
+    Mode.ENCODE: ModeConfig(
         cmd_builder=build_ffmpeg_cmd,
         verifier=verify_output,
         output_ext=".mp4",
@@ -48,7 +46,7 @@ MODE_CONFIGS: Final[dict[str, ModeConfig]] = {
         label="encode",
         completion_verb="encoded",
     ),
-    MODE_WEBM: ModeConfig(
+    Mode.WEBM: ModeConfig(
         cmd_builder=build_webm_remux_cmd,
         verifier=verify_webm_output,
         output_ext=".webm",

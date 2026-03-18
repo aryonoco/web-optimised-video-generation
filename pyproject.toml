@@ -84,29 +84,16 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
 
-# --- Pyright (strict) ---
+# --- Pyright (strict + beyond-strict opt-ins) ---
 [tool.pyright]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
-reportMissingTypeStubs = true
-reportUnusedImport = true
-reportUnusedVariable = true
-reportUnusedClass = true
-reportUnusedFunction = true
-reportDuplicateImport = true
-reportUntypedFunctionDecorator = true
-reportUntypedClassDecorator = true
-reportUntypedBaseClass = true
-reportPrivateUsage = true
-reportConstantRedefinition = true
-reportIncompatibleMethodOverride = true
-reportIncompatibleVariableOverride = true
-reportMissingParameterType = true
-reportUnnecessaryIsInstance = true
-reportUnnecessaryCast = true
-reportUnnecessaryComparison = true
-reportUnnecessaryContains = true
-reportUnusedExpression = true
-reportMatchNotExhaustive = true
+# Opt-in rules not enabled by strict mode
+reportImplicitOverride = "error"
+reportUnusedCallResult = "error"
+# Stricter type evaluation
+deprecateTypingAliases = true
+disableBytesTypePromotions = true
+enableReachabilityAnalysis = true
 venvPath = "."
 venv = ".venv"

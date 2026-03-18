@@ -22,7 +22,7 @@ def validate_environment() -> None:
     """
     for tool in ("ffmpeg", "ffprobe"):
         try:
-            subprocess.run(  # noqa: S603
+            _ = subprocess.run(  # noqa: S603
                 [tool, "-version"],
                 capture_output=True,
                 text=True,

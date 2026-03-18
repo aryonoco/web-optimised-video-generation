@@ -19,10 +19,9 @@ from rich.table import Table
 from web_optimise._constants import BYTES_PER_MB
 from web_optimise._constants import MAX_WEB_FRAME_RATE
 from web_optimise._constants import MKV_EXTENSIONS
-from web_optimise._constants import MODE_ENCODE
-from web_optimise._constants import MODE_REMUX
 from web_optimise._constants import OUTPUT_DIR_NAME
 from web_optimise._constants import TARGET_FPS
+from web_optimise._constants import Mode
 from web_optimise._discovery import effective_mode
 from web_optimise._discovery import find_files
 from web_optimise._discovery import sanitise_filename
@@ -65,17 +64,17 @@ def parse_args() -> argparse.Namespace:
             "              Re-process existing outputs\n"
         ),
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "paths",
         nargs="+",
         type=Path,
         metavar="PATH",
         help="media file(s) or directory(ies) to process",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--mode",
-        choices=[MODE_REMUX, MODE_ENCODE],
-        default=MODE_REMUX,
+        choices=[Mode.REMUX, Mode.ENCODE],
+        default=Mode.REMUX,
         help=(
             "processing mode for MP4/M4V/MOV files: 'remux' (default) "
             "applies container-level optimisations without re-encoding; "
@@ -83,12 +82,12 @@ def parse_args() -> argparse.Namespace:
             "2-second keyframes. MKV files are always remuxed to WebM."
         ),
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--dry-run",
         action="store_true",
         help="show what would be processed without encoding",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--overwrite",
         action="store_true",
         help="re-process even if output file already exists",
@@ -157,7 +156,7 @@ def _add_totals_row(
 def _display_analysis(
     infos: tuple[FileInfo, ...],
     *,
-    user_mode: str,
+    user_mode: Mode,
 ) -> None:
     """Print the pre-encode file analysis table."""
     table = Table(title="File Analysis")
@@ -222,7 +221,7 @@ def _display_remux_warnings(infos: tuple[FileInfo, ...]) -> None:
 def _process_all(
     infos: tuple[FileInfo, ...],
     *,
-    mode: str,
+    mode: Mode,
     overwrite: bool,
 ) -> tuple[ProcessResult, ...]:
     """Process all files sequentially with a rich progress bar."""
@@ -289,7 +288,7 @@ def main() -> None:
 
         # Reject --mode encode with MKV files
         mkv_files = [f for f in files if f.suffix.lower() in MKV_EXTENSIONS]
-        if args.mode == MODE_ENCODE and mkv_files:
+        if args.mode == Mode.ENCODE and mkv_files:
             names = ", ".join(f.name for f in mkv_files)
             msg = f"--mode encode is not supported for MKV files: {names}"
             raise ValidationError(msg)
@@ -306,7 +305,7 @@ def main() -> None:
         )
         _display_analysis(infos, user_mode=args.mode)
 
-        if args.mode == MODE_REMUX:
+        if args.mode == Mode.REMUX:
             _display_remux_warnings(infos)
 
         if args.dry_run:

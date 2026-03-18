@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
+from typing import override
 
 from web_optimise._constants import BITS_PER_KBIT
 from web_optimise._constants import BYTES_PER_MB
@@ -12,6 +14,7 @@ from web_optimise._constants import WIDTH_4K
 from web_optimise._constants import WIDTH_720P
 from web_optimise._constants import WIDTH_1080P
 from web_optimise._constants import WIDTH_1440P
+from web_optimise._constants import Mode
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  TYPE ALIASES
@@ -19,6 +22,40 @@ from web_optimise._constants import WIDTH_1440P
 
 type CmdBuilder = Callable[[Path, Path], tuple[str, ...]]
 type Verifier = Callable[[Path], tuple[bool, list[str]]]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  FFPROBE JSON STRUCTURE (TypedDict for type-safe parsing boundary)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class RawStream(TypedDict, total=False):
+    """Typed representation of a single ffprobe stream entry."""
+
+    codec_type: str
+    codec_name: str
+    profile: str
+    width: int
+    height: int
+    r_frame_rate: str
+    channels: int
+    sample_rate: str
+    bit_rate: str
+
+
+class RawFormat(TypedDict, total=False):
+    """Typed representation of the ffprobe format section."""
+
+    duration: str
+    size: str
+
+
+class RawProbeData(TypedDict, total=False):
+    """Typed representation of the full ffprobe JSON output."""
+
+    streams: list[RawStream]
+    format: RawFormat
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  EXCEPTIONS
@@ -36,6 +73,7 @@ class ProbeError(WebOptimiseError):
 class EncodeError(WebOptimiseError):
     """ffmpeg encoding failed."""
 
+    @override
     def __init__(
         self,
         message: str,
@@ -57,9 +95,9 @@ class ValidationError(WebOptimiseError):
 
 
 def _find_first_stream(
-    streams: list[dict[str, object]],
+    streams: list[RawStream],
     codec_type: str,
-) -> dict[str, object] | None:
+) -> RawStream | None:
     """Return the first stream matching the given codec_type, or None."""
     for stream in streams:
         if stream.get("codec_type") == codec_type:
@@ -151,7 +189,7 @@ class FileInfo:
     audio: AudioStream | None = None
 
     @classmethod
-    def from_ffprobe(cls, path: Path, data: dict[str, object]) -> FileInfo:
+    def from_ffprobe(cls, path: Path, data: RawProbeData) -> FileInfo:
         """
         Parse ffprobe JSON output into FileInfo.
 
@@ -163,11 +201,7 @@ class FileInfo:
             ProbeError: If no video stream found or data is malformed.
 
         """
-        raw_streams = data.get("streams", [])
-        if not isinstance(raw_streams, list):
-            msg = f"Unexpected streams type in {path}"
-            raise ProbeError(msg)
-        streams: list[dict[str, object]] = raw_streams  # type: ignore[assignment]
+        streams = data.get("streams", [])
 
         video_stream = _find_first_stream(streams, "video")
         audio_stream_data = _find_first_stream(streams, "audio")
@@ -177,14 +211,14 @@ class FileInfo:
             raise ProbeError(msg)
 
         frame_rate = _parse_frame_rate(
-            video_stream.get("r_frame_rate", "30/1"),  # type: ignore[arg-type]
+            video_stream.get("r_frame_rate", "30/1"),
         )
 
         video = VideoStream(
-            codec=video_stream.get("codec_name", "unknown"),  # type: ignore[arg-type]
-            profile=video_stream.get("profile", "unknown"),  # type: ignore[arg-type]
-            width=video_stream.get("width", 0),  # type: ignore[arg-type]
-            height=video_stream.get("height", 0),  # type: ignore[arg-type]
+            codec=video_stream.get("codec_name", "unknown"),
+            profile=video_stream.get("profile", "unknown"),
+            width=video_stream.get("width", 0),
+            height=video_stream.get("height", 0),
             frame_rate=frame_rate,
             bitrate=_safe_int(video_stream.get("bit_rate")),
         )
@@ -192,20 +226,18 @@ class FileInfo:
         audio: AudioStream | None = None
         if audio_stream_data is not None:
             audio = AudioStream(
-                codec=audio_stream_data.get("codec_name", "unknown"),  # type: ignore[arg-type]
-                channels=audio_stream_data.get("channels", 0),  # type: ignore[arg-type]
-                sample_rate=int(audio_stream_data.get("sample_rate", 0)),  # type: ignore[arg-type]
+                codec=audio_stream_data.get("codec_name", "unknown"),
+                channels=audio_stream_data.get("channels", 0),
+                sample_rate=int(audio_stream_data.get("sample_rate", "0")),
                 bitrate=_safe_int(audio_stream_data.get("bit_rate")),
             )
 
         fmt = data.get("format", {})
-        if not isinstance(fmt, dict):
-            fmt = {}
 
         return cls(
             path=path,
-            duration_secs=float(fmt.get("duration", 0)),  # type: ignore[arg-type]
-            size_bytes=int(fmt.get("size", 0)),  # type: ignore[arg-type]
+            duration_secs=float(fmt.get("duration", "0")),
+            size_bytes=int(fmt.get("size", "0")),
             video=video,
             audio=audio,
         )
@@ -250,4 +282,4 @@ class EncodeResult:
         return f"{sign}{pct:.1f}%"
 
 
-type ProcessResult = tuple[EncodeResult, str]
+type ProcessResult = tuple[EncodeResult, Mode]

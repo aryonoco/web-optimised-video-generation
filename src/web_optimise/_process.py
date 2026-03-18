@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from rich.progress import Progress
     from rich.progress import TaskID
 
+    from web_optimise._constants import Mode
     from web_optimise._types import FileInfo
 
 
@@ -25,7 +26,7 @@ def process_file(
     output_dir: Path,
     /,
     *,
-    mode: str,
+    mode: Mode,
     overwrite: bool,
     progress: Progress,
     task_id: TaskID,
@@ -90,11 +91,11 @@ def process_file(
 
     try:
         _read_ffmpeg_progress(proc, info.duration_secs, progress, task_id)
-        proc.wait()
+        _ = proc.wait()
         stderr_thread.join()
     except Exception:
         proc.kill()
-        proc.wait()
+        _ = proc.wait()
         stderr_thread.join()
         if output_path.exists():
             output_path.unlink()

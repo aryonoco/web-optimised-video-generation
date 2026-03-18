@@ -1,5 +1,6 @@
 """Constants for web-optimised video processing."""
 
+import enum
 from typing import Final
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -10,12 +11,17 @@ SUPPORTED_EXTENSIONS: Final[frozenset[str]] = frozenset({".mp4", ".m4v", ".mov",
 OUTPUT_DIR_NAME: Final[str] = "web-optimised"
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  PROCESSING MODES
+#  PROCESSING MODES (discriminated union)
 # ══════════════════════════════════════════════════════════════════════════════
 
-MODE_REMUX: Final[str] = "remux"
-MODE_ENCODE: Final[str] = "encode"
-MODE_WEBM: Final[str] = "webm"
+
+class Mode(enum.StrEnum):
+    """Processing mode for media files."""
+
+    REMUX = "remux"
+    ENCODE = "encode"
+    WEBM = "webm"
+
 
 MKV_EXTENSIONS: Final[frozenset[str]] = frozenset({".mkv"})
 

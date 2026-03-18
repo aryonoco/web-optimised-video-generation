@@ -4,7 +4,7 @@
     <FSharpAnalyzersAlwaysRunAfterBuild>true</FSharpAnalyzersAlwaysRunAfterBuild>
 
     <!-- Analyzer DLL paths (resolved via GeneratePathProperty) -->
-    <FSharpAnalyzersOtherFlags>--analyzers-path &quot;$(PkgG_Research_FSharp_Analyzers)/analyzers/dotnet/fs&quot;</FSharpAnalyzersOtherFlags>
+    <FSharpAnalyzersOtherFlags>--analyzers-path &quot;$(PkgG-Research_FSharp_Analyzers)/analyzers/dotnet/fs&quot;</FSharpAnalyzersOtherFlags>
     <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --analyzers-path &quot;$(PkgIonide_Analyzers)/analyzers/dotnet/fs&quot;</FSharpAnalyzersOtherFlags>
 
     <!-- SARIF report -->
@@ -12,15 +12,7 @@
     <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --code-root &quot;$(MSBuildThisFileDirectory)&quot;</FSharpAnalyzersOtherFlags>
 
     <!-- Treat ALL diagnostic codes as errors (zero-tolerance) -->
-    <!-- G-Research -->
-    <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --treat-as-error GRA-STRING-001 GRA-STRING-002 GRA-STRING-003 GRA-STRING-004</FSharpAnalyzersOtherFlags>
-    <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --treat-as-error GRA-JSONOPTS-001 GRA-UNIONCASE-001 GRA-VIRTUALCALL-001</FSharpAnalyzersOtherFlags>
-    <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --treat-as-error GRA-IMMUTABLECOLLECTIONEQUALITY-001 GRA-LOGARGFUNCFULLAPP-001</FSharpAnalyzersOtherFlags>
-    <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --treat-as-error GRA-INTERPOLATED-001 GRA-LOGTEMPLMISSVALS-001</FSharpAnalyzersOtherFlags>
-    <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --treat-as-error GRA-DISPBEFOREASYNC-001 GRA-TYPE-ANNOTATE-001</FSharpAnalyzersOtherFlags>
-    <!-- Ionide -->
-    <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --treat-as-error IONIDE-001 IONIDE-002 IONIDE-003 IONIDE-004 IONIDE-005 IONIDE-006</FSharpAnalyzersOtherFlags>
-    <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --treat-as-error IONIDE-007 IONIDE-008 IONIDE-009 IONIDE-010 IONIDE-011 IONIDE-012</FSharpAnalyzersOtherFlags>
+    <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --treat-as-error GRA-STRING-001 GRA-STRING-002 GRA-STRING-003 GRA-STRING-004 GRA-JSONOPTS-001 GRA-UNIONCASE-001 GRA-VIRTUALCALL-001 GRA-IMMUTABLECOLLECTIONEQUALITY-001 GRA-LOGARGFUNCFULLAPP-001 GRA-INTERPOLATED-001 GRA-LOGTEMPLMISSVALS-001 GRA-DISPBEFOREASYNC-001 GRA-TYPE-ANNOTATE-001 IONIDE-001 IONIDE-002 IONIDE-003 IONIDE-004 IONIDE-005 IONIDE-006 IONIDE-007 IONIDE-008 IONIDE-009 IONIDE-010 IONIDE-011 IONIDE-012</FSharpAnalyzersOtherFlags>
 
     <!-- Verbosity -->
     <FSharpAnalyzersOtherFlags>$(FSharpAnalyzersOtherFlags) --verbosity d</FSharpAnalyzersOtherFlags>

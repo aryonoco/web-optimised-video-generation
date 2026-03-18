@@ -25,8 +25,7 @@ After completing each significant section of work (a refactor, a new feature, a 
 1. `dotnet fantomas src/` — format all source files
 2. `dotnet fantomas --check src/` — verify formatting (exit 0 = OK, exit 1 = needs formatting, exit 99 = error)
 3. `dotnet fsharplint lint WebOptimise.slnx` — lint; fix all reported issues
-4. `dotnet build -c Release` — must produce zero warnings and zero errors
-5. `dotnet fsharp-analyzers --project src/WebOptimise/WebOptimise.fsproj --analyzers-path ~/.nuget/packages/g-research.fsharp.analyzers/0.22.0/analyzers/dotnet/fs/ --analyzers-path ~/.nuget/packages/ionide.analyzers/0.15.0/analyzers/dotnet/fs/ --verbosity d` — run both analyzer sets; fix all issues they report
+4. `dotnet build -c Release` — zero warnings/errors (includes all 25 G-Research + Ionide analyzers automatically via FSharp.Analyzers.Build; all findings treated as errors)
 
 ## Architecture
 

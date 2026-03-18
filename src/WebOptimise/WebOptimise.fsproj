@@ -44,11 +44,11 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>build</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="G-Research.FSharp.Analyzers">
+    <PackageReference Include="G-Research.FSharp.Analyzers" GeneratePathProperty="true">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Ionide.Analyzers">
+    <PackageReference Include="Ionide.Analyzers" GeneratePathProperty="true">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers</IncludeAssets>
     </PackageReference>

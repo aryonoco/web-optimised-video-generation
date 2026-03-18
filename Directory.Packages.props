@@ -7,8 +7,8 @@
     <PackageVersion Include="CliWrap" Version="3.10.0" />
     <PackageVersion Include="FsToolkit.ErrorHandling" Version="5.2.0" />
     <PackageVersion Include="FSharp.Analyzers.Build" Version="0.5.0" />
-    <PackageVersion Include="G-Research.FSharp.Analyzers" Version="0.22.0" GeneratePathProperty="true" />
-    <PackageVersion Include="Ionide.Analyzers" Version="0.15.0" GeneratePathProperty="true" />
+    <PackageVersion Include="G-Research.FSharp.Analyzers" Version="0.22.0" />
+    <PackageVersion Include="Ionide.Analyzers" Version="0.15.0" />
     <PackageVersion Include="EluciusFTW.SpectreCoff" Version="0.54.2" />
   </ItemGroup>
 </Project>

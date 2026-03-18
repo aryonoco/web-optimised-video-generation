@@ -40,8 +40,18 @@
     <PackageReference Include="Argu" />
     <PackageReference Include="CliWrap" />
     <PackageReference Include="FsToolkit.ErrorHandling" />
-    <PackageReference Include="G-Research.FSharp.Analyzers" />
-    <PackageReference Include="Ionide.Analyzers" />
+    <PackageReference Include="FSharp.Analyzers.Build">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>build</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="G-Research.FSharp.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Ionide.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>analyzers</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="EluciusFTW.SpectreCoff" />
   </ItemGroup>
 

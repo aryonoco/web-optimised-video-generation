@@ -55,15 +55,6 @@ MAX_KEYFRAME_SAMPLE: Final[int] = 10
 MAX_ACCEPTABLE_KEYFRAME_INTERVAL: Final[float] = 3.0
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  EBML ELEMENT IDs (WebM verification)
-# ══════════════════════════════════════════════════════════════════════════════
-
-EBML_CUES_ID: Final[bytes] = b"\x1c\x53\xbb\x6b"
-EBML_CLUSTER_ID: Final[bytes] = b"\x1f\x43\xb6\x75"
-EBML_SEEKHEAD_SKIP: Final[int] = 200
-WEBM_HEADER_READ_SIZE: Final[int] = 8192
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  UNIT CONVERSION
 # ══════════════════════════════════════════════════════════════════════════════
 

@@ -4,15 +4,12 @@ import contextlib
 import json
 import subprocess
 from typing import TYPE_CHECKING
+from typing import Final
 
-from web_optimise._constants import EBML_CLUSTER_ID
-from web_optimise._constants import EBML_CUES_ID
-from web_optimise._constants import EBML_SEEKHEAD_SKIP
 from web_optimise._constants import KEYFRAME_INTERVAL_SECS
 from web_optimise._constants import MAX_ACCEPTABLE_KEYFRAME_INTERVAL
 from web_optimise._constants import MAX_KEYFRAME_SAMPLE
 from web_optimise._constants import MIN_KEYFRAMES_FOR_CHECK
-from web_optimise._constants import WEBM_HEADER_READ_SIZE
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -71,26 +68,93 @@ def verify_webm_output(path: Path, /) -> tuple[bool, list[str]]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+# EBML element IDs for Matroska Level-1 elements.
+_CUES_ELEMENT_ID: Final[bytes] = b"\x1c\x53\xbb\x6b"
+_CLUSTER_ELEMENT_ID: Final[bytes] = b"\x1f\x43\xb6\x75"
+_HEADER_SCAN_SIZE: Final[int] = 1024 * 1024  # 1 MB
+
+
+def _ebml_vint_width(first_byte: int) -> int:
+    """Return the byte-width of an EBML variable-length integer."""
+    if first_byte == 0:
+        return 0
+    return 9 - first_byte.bit_length()
+
+
+def _read_ebml_element_id(data: bytes, pos: int) -> tuple[bytes, int]:
+    """Read an EBML element ID and return (id_bytes, new_position)."""
+    if pos >= len(data):
+        return b"", pos
+    width = _ebml_vint_width(data[pos])
+    end = pos + width
+    if width == 0 or end > len(data):
+        return b"", pos
+    return data[pos:end], end
+
+
+def _read_ebml_element_size(data: bytes, pos: int) -> tuple[int, int]:
+    """Read an EBML element data size and return (size, new_position)."""
+    if pos >= len(data):
+        return -1, pos
+    width = _ebml_vint_width(data[pos])
+    end = pos + width
+    if width == 0 or end > len(data):
+        return -1, pos
+    mask = (1 << (8 * width)) - 1
+    value = int.from_bytes(data[pos:end]) & (mask >> width)
+    return value, end
+
+
 def _check_cues_front(path: Path, issues: list[str]) -> None:
-    """Verify Cues element appears before first Cluster in WebM file."""
+    """
+    Verify Cues element appears before first Cluster in WebM file.
+
+    Parses EBML Level-1 element headers to determine the ordering of
+    Cues and Cluster elements, rather than scanning for raw byte
+    patterns which can produce false positives.
+    """
     try:
         with path.open("rb") as f:
-            header = f.read(WEBM_HEADER_READ_SIZE)
+            data = f.read(_HEADER_SCAN_SIZE)
     except OSError as err:
         issues.append(f"Could not read file for verification: {err}")
         return
 
-    # Skip the SeekHead area to avoid matching the Cues reference
-    # in the SeekHead rather than the actual Cues element.
-    cues_pos = header.find(EBML_CUES_ID, EBML_SEEKHEAD_SKIP)
-    cluster_pos = header.find(EBML_CLUSTER_ID, EBML_SEEKHEAD_SKIP)
+    pos = 0
 
-    if cluster_pos == -1:
-        issues.append("Could not find Cluster element in file header")
-    elif cues_pos == -1:
-        issues.append("Cues not at front: seek index is at end of file")
-    elif cues_pos > cluster_pos:
-        issues.append("Cues not at front: Cues element appears after first Cluster")
+    # Skip EBML header element (ID + size + data).
+    elem_id, pos = _read_ebml_element_id(data, pos)
+    size, pos = _read_ebml_element_size(data, pos)
+    if not elem_id or size < 0:
+        issues.append("Could not parse EBML header")
+        return
+    pos += size
+
+    # Read Segment element header (ID + size); children follow immediately.
+    elem_id, pos = _read_ebml_element_id(data, pos)
+    _, pos = _read_ebml_element_size(data, pos)
+    if not elem_id:
+        issues.append("Could not parse Segment element")
+        return
+
+    # Walk Level-1 elements until we find Cues or Cluster.
+    while pos < len(data):
+        elem_id, id_end = _read_ebml_element_id(data, pos)
+        if not elem_id:
+            break
+        size, data_start = _read_ebml_element_size(data, id_end)
+        if size < 0:
+            break
+
+        if elem_id == _CUES_ELEMENT_ID:
+            return  # Cues found before any Cluster — verification passed.
+        if elem_id == _CLUSTER_ELEMENT_ID:
+            issues.append("Cues not at front: first Cluster appears before Cues element")
+            return
+
+        pos = data_start + size
+
+    issues.append("Could not locate Cues or Cluster element in file header")
 
 
 def _check_video_profile(path: Path, issues: list[str]) -> None:

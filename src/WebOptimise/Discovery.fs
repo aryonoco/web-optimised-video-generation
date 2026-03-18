@@ -10,11 +10,6 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module Discovery =
 
-    let private nonNullPath (s: string | null) =
-        match s with
-        | null -> ""
-        | v -> v
-
     let private naturalComparer =
         StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering)
 
@@ -24,7 +19,7 @@ module Discovery =
     let private isMkv (ext: string) = Constants.mkvExtensions.Contains ext
 
     let private slugify (name: string) =
-        let stem = Path.GetFileNameWithoutExtension name |> nonNullPath
+        let stem = Path.GetFileNameWithoutExtension name |> NullSafe.path
         let slug = Regex.Replace(stem.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-')
         if String.IsNullOrEmpty slug then "unnamed" else slug
 
@@ -36,7 +31,7 @@ module Discovery =
 
         if Directory.Exists outputDir then
             Directory.EnumerateFiles outputDir
-            |> Seq.tryFind (fun f -> (Path.GetFileName(f) |> nonNullPath).EndsWith(suffix, StringComparison.Ordinal))
+            |> Seq.tryFind (fun f -> (Path.GetFileName(f) |> NullSafe.path).EndsWith(suffix, StringComparison.Ordinal))
         else
             None
 
@@ -58,7 +53,7 @@ module Discovery =
                 let resolved = Path.GetFullPath p
 
                 if File.Exists resolved then
-                    let ext = Path.GetExtension resolved |> nonNullPath
+                    let ext = Path.GetExtension resolved |> NullSafe.path
 
                     if not (isSupported ext) then
                         return! Error(AppError.ValidationError $"Unsupported file type '%s{ext}': %s{p}")
@@ -71,13 +66,13 @@ module Discovery =
                     let files =
                         Directory.EnumerateFiles resolved
                         |> Seq.filter (fun f ->
-                            isSupported (Path.GetExtension f |> nonNullPath)
-                            && (Path.GetDirectoryName f |> nonNullPath |> Path.GetFileName |> nonNullPath)
+                            isSupported (Path.GetExtension f |> NullSafe.path)
+                            && (Path.GetDirectoryName f |> NullSafe.path |> Path.GetFileName |> NullSafe.path)
                                <> Constants.OutputDirName)
                         |> Seq.sortWith (fun a b ->
                             naturalComparer.Compare(
-                                Path.GetFileName a |> nonNullPath,
-                                Path.GetFileName b |> nonNullPath
+                                Path.GetFileName a |> NullSafe.path,
+                                Path.GetFileName b |> NullSafe.path
                             ))
 
                     for f in files do

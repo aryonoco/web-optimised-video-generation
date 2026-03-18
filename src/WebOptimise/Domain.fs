@@ -2,6 +2,14 @@ namespace WebOptimise
 
 open System.IO
 
+[<RequireQualifiedAccess>]
+module NullSafe =
+
+    let inline path (s: string | null) =
+        match s with
+        | null -> ""
+        | v -> v
+
 // Branded types
 
 [<Struct>]
@@ -20,16 +28,11 @@ module MediaFilePath =
 
     let ofTrusted (path: string) = MediaFilePath path
 
-    let private nonNullPath (s: string | null) =
-        match s with
-        | null -> ""
-        | v -> v
+    let name (MediaFilePath p) = Path.GetFileName p |> NullSafe.path
 
-    let name (MediaFilePath p) = Path.GetFileName p |> nonNullPath
+    let extension (MediaFilePath p) = Path.GetExtension p |> NullSafe.path
 
-    let extension (MediaFilePath p) = Path.GetExtension p |> nonNullPath
-
-    let directory (MediaFilePath p) = Path.GetDirectoryName p |> nonNullPath
+    let directory (MediaFilePath p) = Path.GetDirectoryName p |> NullSafe.path
 
 [<Struct>]
 type OutputExtension = private OutputExtension of string

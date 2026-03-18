@@ -9,11 +9,6 @@ open Spectre.Console
 [<RequireQualifiedAccess>]
 module Display =
 
-    let private nonNullPath (s: string | null) =
-        match s with
-        | null -> ""
-        | v -> v
-
     let printError (msg: string) =
         AnsiConsole.MarkupLine $"[red]Error:[/] %s{Markup.Escape msg}"
 
@@ -89,7 +84,7 @@ module Display =
 
             table.AddRow(
                 Markup.Escape(MediaFilePath.name r.InputPath),
-                Markup.Escape(Path.GetFileName r.OutputPath |> nonNullPath),
+                Markup.Escape(Path.GetFileName r.OutputPath |> NullSafe.path),
                 $"%.1f{inputMb} MB",
                 $"%.1f{outputMb} MB",
                 $"[%s{style}]%s{EncodeResult.savingsDisplay r}[/%s{style}]"
@@ -125,12 +120,12 @@ module Display =
             match verifyResult with
             | Ok() ->
                 AnsiConsole.MarkupLine
-                    $"  [green]\u2713[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> nonNullPath)}"
+                    $"  [green]\u2713[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> NullSafe.path)}"
             | Error issues ->
                 allOk <- false
 
                 AnsiConsole.MarkupLine
-                    $"  [red]\u2717[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> nonNullPath)}"
+                    $"  [red]\u2717[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> NullSafe.path)}"
 
                 for issue in issues do
                     AnsiConsole.MarkupLine $"    [red]\u2192[/] %s{Markup.Escape issue}"

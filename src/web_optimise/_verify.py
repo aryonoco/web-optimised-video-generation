@@ -118,7 +118,7 @@ def _check_video_profile(path: Path, issues: list[str]) -> None:
     for stream in data.get("streams", []):
         if stream.get("codec_type") == "video":
             profile = stream.get("profile", "")
-            if "High" not in profile:  # type: ignore[operator]
+            if not isinstance(profile, str) or "High" not in profile:
                 issues.append(f"Expected High profile, got '{profile}'")
             break
 

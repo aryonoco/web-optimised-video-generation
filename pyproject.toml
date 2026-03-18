@@ -36,6 +36,7 @@ types = ["pyright>=1.1.400"]
 # --- Ruff (strictest, migrated from ruff.toml) ---
 [tool.ruff]
 target-version = "py314"
+preview = true
 line-length = 100
 
 [tool.ruff.lint]
@@ -68,6 +69,11 @@ ignore = [
     "PLR0913",
     # ffmpeg/ffprobe are always resolved via PATH by design
     "S607",
+    # subprocess is fundamental to this CLI tool
+    "S404",
+    # Type annotations are the documentation; formal Returns sections add noise
+    "DOC201",
+    "DOC501",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -75,6 +81,9 @@ ignore = [
     "F401", # unused-import (re-exports)
     "D104", # missing-docstring-in-public-package
 ]
+
+[tool.ruff.lint.flake8-type-checking]
+strict = true
 
 [tool.ruff.lint.isort]
 force-single-line = true

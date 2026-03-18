@@ -121,13 +121,13 @@ def _parse_frame_rate(fps_str: str) -> float:
     return num / den
 
 
-def _safe_int(value: object) -> int | None:
+def _safe_int(value: str | None) -> int | None:
     """Convert a value to int if possible, otherwise return None."""
     if value is None:
         return None
     try:
-        return int(value)  # type: ignore[call-overload]
-    except ValueError, TypeError:
+        return int(value)
+    except (ValueError, TypeError):
         return None
 
 

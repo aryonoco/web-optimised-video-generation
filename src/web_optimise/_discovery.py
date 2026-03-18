@@ -3,13 +3,16 @@
 import re
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from web_optimise._constants import MKV_EXTENSIONS
 from web_optimise._constants import OUTPUT_DIR_NAME
 from web_optimise._constants import SUPPORTED_EXTENSIONS
 from web_optimise._constants import Mode
-from web_optimise._types import FileInfo
 from web_optimise._types import ValidationError
+
+if TYPE_CHECKING:
+    from web_optimise._types import FileInfo
 
 
 def find_files(paths: tuple[Path, ...], /) -> tuple[Path, ...]:

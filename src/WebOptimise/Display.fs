@@ -10,7 +10,7 @@ open SpectreCoff
 [<NoComparison; NoEquality>]
 type VerificationResult = {
     FileName: string
-    Outcome: Result<unit, string list>
+    Outcome: Result<unit, VerificationIssue list>
 }
 
 /// SpectreCoff display functions for CLI output.
@@ -200,7 +200,7 @@ module Display =
                     for issue in issues do
                         Many [
                             MC(Color.Red, "  \u2192")
-                            V $" %s{issue}"
+                            V $" %s{VerificationIssue.format issue}"
                         ]
                         |> toConsole
 
@@ -222,7 +222,7 @@ module Display =
     let private processWithContext
         (infos: MediaFileInfo list)
         (processOne:
-            MediaFileInfo -> Mode -> (float -> unit) -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
+            MediaFileInfo -> Mode -> ProgressReporter -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
         (userMode: Mode)
         (ct: CancellationToken)
         (ctx: ProgressContext)
@@ -266,7 +266,7 @@ module Display =
     let withProgress
         (infos: MediaFileInfo list)
         (processOne:
-            MediaFileInfo -> Mode -> (float -> unit) -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
+            MediaFileInfo -> Mode -> ProgressReporter -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
         (userMode: Mode)
         (ct: CancellationToken)
         : Task<Result<ProcessResult list, AppError>>

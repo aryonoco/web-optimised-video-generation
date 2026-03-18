@@ -18,30 +18,30 @@ module ProbeParse =
             |> ValueOption.ofOption
         | _ -> ValueNone
 
-    let parseVideoStream (fileName: string) (elem: JsonElement) : Result<VideoStream, AppError> =
+    let parseVideoStream (path: MediaFilePath) (elem: JsonElement) : Result<VideoStream, AppError> =
         result {
             let! codec =
                 match elem with
                 | Json.Prop "codec_name" (Json.Str s) -> Ok(VideoCodec.ofString s)
-                | _ -> Error(AppError.ProbeError $"Missing video codec in %s{fileName}")
+                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.VideoCodec, path)))
 
             let! width =
                 match elem with
                 | Json.Prop "width" (Json.JInt w) when w > 0 -> Ok w
-                | _ -> Error(AppError.ProbeError $"Missing or invalid video width in %s{fileName}")
+                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.VideoWidth, path)))
 
             let! height =
                 match elem with
                 | Json.Prop "height" (Json.JInt h) when h > 0 -> Ok h
-                | _ -> Error(AppError.ProbeError $"Missing or invalid video height in %s{fileName}")
+                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.VideoHeight, path)))
 
             let! frameRate =
                 match elem with
                 | Json.Prop "r_frame_rate" (Json.Str s) ->
                     match Parse.frameRate s with
                     | ValueSome f when f > 0.0 -> Ok f
-                    | _ -> Error(AppError.ProbeError $"Invalid frame rate in %s{fileName}")
-                | _ -> Error(AppError.ProbeError $"Missing frame rate in %s{fileName}")
+                    | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.FrameRate, path)))
+                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.FrameRate, path)))
 
             let profile =
                 match elem with
@@ -63,12 +63,12 @@ module ProbeParse =
             }
         }
 
-    let parseAudioStream (fileName: string) (elem: JsonElement) : Result<AudioStream, AppError> =
+    let parseAudioStream (path: MediaFilePath) (elem: JsonElement) : Result<AudioStream, AppError> =
         result {
             let! codec =
                 match elem with
                 | Json.Prop "codec_name" (Json.Str s) -> Ok(AudioCodec.ofString s)
-                | _ -> Error(AppError.ProbeError $"Missing audio codec in %s{fileName}")
+                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.AudioCodec, path)))
 
             return {
                 Codec = codec
@@ -90,49 +90,47 @@ module ProbeParse =
             }
         }
 
-    let parseFormat (fileName: string) (root: JsonElement) : Result<struct (float * int64), AppError> =
+    let parseFormat (path: MediaFilePath) (root: JsonElement) : Result<struct (float * int64), AppError> =
         result {
             let! fmt =
                 match root with
                 | Json.Prop "format" fmt -> Ok fmt
-                | _ -> Error(AppError.ProbeError $"Missing format section in %s{fileName}")
+                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.FormatSection, path)))
 
             let! duration =
                 match fmt with
                 | Json.Prop "duration" (Json.Str(Float d)) when d > 0.0 -> Ok d
-                | _ -> Error(AppError.ProbeError $"Missing or invalid duration in %s{fileName}")
+                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.Duration, path)))
 
             let! size =
                 match fmt with
                 | Json.Prop "size" (Json.Str(Float s)) when s > 0.0 -> Ok(int64 s)
-                | _ -> Error(AppError.ProbeError $"Missing or invalid file size in %s{fileName}")
+                | _ -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.FileSize, path)))
 
             return struct (duration, size)
         }
 
     let fromJson (path: MediaFilePath) (json: string) : Result<MediaFileInfo, AppError> =
         result {
-            let fileName = MediaFilePath.name path
-
             let! root =
                 try
                     Ok(JsonElement.Parse(json))
                 with ex ->
-                    Error(AppError.ProbeError $"Failed to parse ffprobe JSON for %s{fileName}: %s{ex.Message}")
+                    Error(AppError.Probe(ProbeFailure.JsonParseFailed(ex.Message, path)))
 
             let! videoElem =
                 match findStream "video" root with
                 | ValueSome elem -> Ok elem
-                | ValueNone -> Error(AppError.ProbeError $"No video stream found in %s{fileName}")
+                | ValueNone -> Error(AppError.Probe(ProbeFailure.MissingField(ProbeField.VideoStream, path)))
 
-            let! video = parseVideoStream fileName videoElem
+            let! video = parseVideoStream path videoElem
 
             let! audio =
                 match findStream "audio" root with
-                | ValueSome elem -> parseAudioStream fileName elem |> Result.map ValueSome
+                | ValueSome elem -> parseAudioStream path elem |> Result.map ValueSome
                 | ValueNone -> Ok ValueNone
 
-            let! struct (duration, size) = parseFormat fileName root
+            let! struct (duration, size) = parseFormat path root
 
             return {
                 Path = path

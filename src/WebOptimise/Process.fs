@@ -11,7 +11,7 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module Process =
 
-    let private parseProgressLine (onProgress: float -> unit) (totalDuration: float) (line: string) =
+    let private parseProgressLine (onProgress: ProgressReporter) (totalDuration: float) (line: string) =
         if line.StartsWith("out_time_us=", StringComparison.Ordinal) then
             let valueStr = line.AsSpan().Slice(12) // "out_time_us=" is 12 chars
 
@@ -24,10 +24,11 @@ module Process =
             onProgress totalDuration
 
     let private runEncode
+        (env: Env)
         (info: MediaFileInfo)
         (outputDir: string)
         (config: ModeConfig)
-        (onProgress: float -> unit)
+        (onProgress: ProgressReporter)
         (ct: CancellationToken)
         : Task<Result<EncodeResult, AppError>>
         =
@@ -37,7 +38,7 @@ module Process =
                     Directory.CreateDirectory outputDir |> ignore
                     Ok()
                 with ex ->
-                    Error(AppError.IoError $"Cannot create output directory: %s{ex.Message}")
+                    Error(AppError.Process(ProcessFailure.OutputDirFailed(outputDir, ex.Message)))
 
             match createDirResult with
             | Error e -> return Error e
@@ -53,19 +54,24 @@ module Process =
                 let stdErrBuilder = StringBuilder()
 
                 let! shellResult =
-                    Shell.runStreaming "ffmpeg" args (parseProgressLine onProgress info.DurationSecs) stdErrBuilder ct
+                    env.RunStreaming "ffmpeg" args (parseProgressLine onProgress info.DurationSecs) stdErrBuilder ct
 
                 let encodeResult =
                     match shellResult with
-                    | Error ShellError.Cancelled -> Error(AppError.IoError "Operation cancelled")
-                    | Error e -> Error(AppError.ofShellError e)
+                    | Error ShellError.Cancelled -> Error(AppError.Process ProcessFailure.Cancelled)
+                    | Error e -> Error(AppError.Process(ProcessFailure.ShellFailed e))
                     | Ok exitCode when exitCode <> 0 ->
                         let stderr = stdErrBuilder.ToString()
 
                         Error(
-                            AppError.EncodeError(
-                                $"%s{config.ErrorVerb} failed for %s{MediaFilePath.name info.Path}: exit code %d{exitCode}\n%s{stderr}",
-                                ValueSome("ffmpeg" :: args)
+                            AppError.Process(
+                                ProcessFailure.FfmpegFailed(
+                                    exitCode,
+                                    stderr,
+                                    "ffmpeg" :: args,
+                                    MediaFilePath.name info.Path,
+                                    config.ErrorVerb
+                                )
                             )
                         )
                     | Ok _ ->
@@ -89,25 +95,26 @@ module Process =
         }
 
     let processFile
+        (env: Env)
         (info: MediaFileInfo)
         (outputDir: string)
         (mode: Mode)
         (overwrite: bool)
-        (onProgress: float -> unit)
+        (onProgress: ProgressReporter)
         (ct: CancellationToken)
         : Task<Result<EncodeResult, AppError>>
         =
         task {
             let config = ModeConfig.forMode mode
 
-            let existingFiles = Shell.enumerateFiles outputDir
+            let existingFiles = env.EnumerateFiles outputDir
 
             let existing =
                 Discovery.matchExistingOutput existingFiles (MediaFilePath.name info.Path) config.OutputExt
-                |> Option.map OutputPath.ofFullPath
+                |> ValueOption.map OutputPath.ofFullPath
 
             match existing, overwrite with
-            | Some existingPath, false ->
+            | ValueSome existingPath, false ->
                 onProgress info.DurationSecs
 
                 let outputSize =
@@ -120,8 +127,8 @@ module Process =
                         InputSize = info.SizeBytes
                         OutputSize = outputSize
                     }
-            | Some existingPath, true ->
+            | ValueSome existingPath, true ->
                 File.Delete(OutputPath.value existingPath)
-                return! runEncode info outputDir config onProgress ct
-            | None, _ -> return! runEncode info outputDir config onProgress ct
+                return! runEncode env info outputDir config onProgress ct
+            | ValueNone, _ -> return! runEncode env info outputDir config onProgress ct
         }

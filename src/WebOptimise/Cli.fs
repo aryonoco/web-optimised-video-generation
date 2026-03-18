@@ -23,11 +23,24 @@ type CliArgs =
             | Overwrite -> "re-process even if output file already exists"
 
 [<NoComparison; NoEquality>]
-type ParsedArgs = {
-    Paths: string list
+type private ValidatedInput = {
+    Paths: NonEmpty<string>
     Mode: WebOptimise.Mode
     DryRun: bool
     Overwrite: bool
+}
+
+[<NoComparison; NoEquality>]
+type private DiscoveredFiles = {
+    Input: ValidatedInput
+    Files: NonEmpty<MediaFilePath>
+}
+
+[<NoComparison; NoEquality>]
+type private AnalysedPipeline = {
+    Input: ValidatedInput
+    Infos: NonEmpty<MediaFileInfo>
+    Modes: Mode list
 }
 
 [<RequireQualifiedAccess>]
@@ -37,20 +50,19 @@ module Cli =
         match s.ToLowerInvariant() with
         | "remux" -> Ok WebOptimise.Mode.Remux
         | "encode" -> Ok WebOptimise.Mode.Encode
-        | other -> Error(AppError.ValidationError $"Unknown mode: '%s{other}'. Use 'remux' or 'encode'.")
+        | other -> Error(AppError.Validation(ValidationFailure.UnknownMode other))
 
-    let private parseArgs (argv: string array) : Result<ParsedArgs, AppError> =
+    let private parseAndValidate (argv: string array) : Result<ValidatedInput, AppError> =
         try
             let parser =
                 ArgumentParser.Create<CliArgs>(
                     programName = "web-optimise",
-                    helpTextMessage = "Optimise media files for progressive web delivery.",
-                    errorHandler = ProcessExiter()
+                    helpTextMessage = "Optimise media files for progressive web delivery."
                 )
 
-            let results = parser.Parse(argv, raiseOnUsage = true)
+            let results = parser.Parse(argv)
 
-            let paths = results.GetResult(Paths, defaultValue = [])
+            let rawPaths = results.GetResult(Paths, defaultValue = [])
             let modeStr = results.GetResult(Mode, defaultValue = "remux")
             let dryRun = results.Contains DryRun
             let overwrite = results.Contains Overwrite
@@ -58,8 +70,10 @@ module Cli =
             result {
                 let! mode = parseMode modeStr
 
-                if paths.IsEmpty then
-                    return! Error(AppError.ValidationError "No paths provided.")
+                let! paths =
+                    match NonEmpty.ofList rawPaths with
+                    | ValueSome nel -> Ok nel
+                    | ValueNone -> Error(AppError.Validation ValidationFailure.NoPaths)
 
                 return {
                     Paths = paths
@@ -69,23 +83,25 @@ module Cli =
                 }
             }
         with :? ArguParseException as ex ->
-            Error(AppError.ValidationError ex.Message)
+            Error(AppError.Validation(ValidationFailure.ArguError ex.Message))
 
-    let private validateEnvironment () : Task<Result<unit, AppError>> =
+    let private validateEnvironment (env: Env) : Task<Result<unit, AppError>> =
         taskResult {
-            do!
-                Shell.runExists "ffmpeg"
-                |> TaskResult.mapError (ShellError.format >> AppError.ValidationError)
+            let! _ =
+                env.RunExists "ffmpeg"
+                |> TaskResult.mapError (fun _ -> AppError.Validation(ValidationFailure.ToolNotFound "ffmpeg"))
 
-            do!
-                Shell.runExists "ffprobe"
-                |> TaskResult.mapError (ShellError.format >> AppError.ValidationError)
+            and! _ =
+                env.RunExists "ffprobe"
+                |> TaskResult.mapError (fun _ -> AppError.Validation(ValidationFailure.ToolNotFound "ffprobe"))
+
+            return ()
         }
 
-    let private probeFile (path: MediaFilePath) : Task<Result<MediaFileInfo, AppError>> =
+    let private probeFile (env: Env) (path: MediaFilePath) : Task<Result<MediaFileInfo, AppError>> =
         task {
             match!
-                Shell.runBuffered "ffprobe" [
+                env.RunBuffered "ffprobe" [
                     "-v"
                     "quiet"
                     "-print_format"
@@ -95,40 +111,76 @@ module Cli =
                     MediaFilePath.value path
                 ]
             with
-            | Error e ->
-                return
-                    Error(
-                        AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{ShellError.format e}"
-                    )
+            | Error e -> return Error(AppError.Probe(ProbeFailure.ShellFailed(e, path)))
             | Ok probeResult ->
                 if probeResult.ExitCode <> 0 then
                     return
-                        Error(
-                            AppError.ProbeError
-                                $"ffprobe failed for %s{MediaFilePath.name path}: %s{probeResult.StdErr}"
-                        )
+                        Error(AppError.Probe(ProbeFailure.NonZeroExit(probeResult.ExitCode, probeResult.StdErr, path)))
                 else
                     return ProbeParse.fromJson path probeResult.StdOut
         }
 
-    [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type private PipelineOutcome =
-        | NothingToDo
-        | DryRun
-        | Process of args: ParsedArgs * infos: MediaFileInfo list * modes: Mode list
+    let private discover (env: Env) (input: ValidatedInput) : Task<Result<DiscoveredFiles, AppError>> =
+        taskResult {
+            let resolved =
+                input.Paths
+                |> NonEmpty.toList
+                |> List.map env.ResolveInputPath
+
+            let! files = Discovery.collectFiles resolved
+            do! Discovery.rejectMkvEncode (NonEmpty.toList files) input.Mode
+
+            return {
+                Input = input
+                Files = files
+            }
+        }
+
+    let private analyse (env: Env) (discovered: DiscoveredFiles) : Task<Result<AnalysedPipeline, AppError>> =
+        taskResult {
+            let! infos =
+                discovered.Files
+                |> NonEmpty.toList
+                |> List.traverseTaskResultA (probeFile env)
+                |> TaskResult.mapError (fun errors ->
+                    match errors with
+                    | [ single ] -> single
+                    | h :: t -> AppError.Multiple(NonEmpty(h, t))
+                    | [] -> AppError.Validation ValidationFailure.NoPaths
+                )
+
+            do! Discovery.validateMkvCodecs infos
+
+            let effectiveModes =
+                infos
+                |> List.map (fun i -> Discovery.effectiveMode i discovered.Input.Mode)
+                |> List.distinct
+
+            let infosNel =
+                match NonEmpty.ofList infos with
+                | ValueSome nel -> nel
+                | ValueNone -> NonEmpty.singleton (List.head infos)
+
+            return {
+                Input = discovered.Input
+                Infos = infosNel
+                Modes = effectiveModes
+            }
+        }
 
     let private processOne
+        (env: Env)
         (overwrite: bool)
         (info: MediaFileInfo)
         (fileMode: WebOptimise.Mode)
-        (onProgress: float -> unit)
+        (onProgress: ProgressReporter)
         (ct: CancellationToken)
         : Task<Result<EncodeResult, AppError>>
         =
         let outputDir = Discovery.outputDir info
-        Process.processFile info outputDir fileMode overwrite onProgress ct
+        Process.processFile env info outputDir fileMode overwrite onProgress ct
 
-    let private runProcessing (args: ParsedArgs) (infos: MediaFileInfo list) (effectiveModes: Mode list) : Task<int> =
+    let private execute (env: Env) (pipeline: AnalysedPipeline) : Task<int> =
         task {
             use cts = new CancellationTokenSource()
 
@@ -137,11 +189,14 @@ module Cli =
                 cts.Cancel()
             )
 
-            let! progressResult = Display.withProgress infos (processOne args.Overwrite) args.Mode cts.Token
+            let infos = NonEmpty.toList pipeline.Infos
+
+            let! progressResult =
+                Display.withProgress infos (processOne env pipeline.Input.Overwrite) pipeline.Input.Mode cts.Token
 
             match progressResult with
             | Error e ->
-                Display.printError (AppError.message e)
+                Display.printError (AppError.format e)
                 return 1
             | Ok resultsWithModes ->
                 let! verificationResults =
@@ -149,7 +204,7 @@ module Cli =
                     |> List.map (fun pr ->
                         task {
                             let config = ModeConfig.forMode pr.Mode
-                            let! vr = config.Verifier pr.Result.OutputPath
+                            let! vr = config.Verifier env pr.Result.OutputPath
 
                             return {
                                 FileName = OutputPath.fileName pr.Result.OutputPath
@@ -166,7 +221,7 @@ module Cli =
                 Display.printSummary (resultsWithModes |> List.map _.Result)
 
                 let verb =
-                    effectiveModes
+                    pipeline.Modes
                     |> List.map ModeConfig.completionVerb
                     |> List.distinct
                     |> function
@@ -184,78 +239,48 @@ module Cli =
         }
 
     let run (argv: string array) : Task<int> =
+        let env = Env.live
+
         task {
-            let pipeline =
+            match!
                 taskResult {
-                    let! args = parseArgs argv
-                    do! validateEnvironment ()
-                    let resolved = args.Paths |> List.map Shell.resolveInputPath
-                    let! files = Discovery.collectFiles resolved
-
-                    if files.IsEmpty then
-                        E "No supported media files found." |> toConsole
-                        return PipelineOutcome.NothingToDo
-                    else
-
-                        do! Discovery.rejectMkvEncode files args.Mode
-
-                        let! infos =
-                            files
-                            |> List.traverseTaskResultA probeFile
-                            |> TaskResult.mapError (fun errors ->
-                                errors
-                                |> List.map AppError.message
-                                |> String.concat "\n"
-                                |> AppError.ProbeError
-                            )
-
-                        do! Discovery.validateMkvCodecs infos
-
-                        let effectiveModes =
-                            infos
-                            |> List.map (fun i -> Discovery.effectiveMode i args.Mode)
-                            |> List.distinct
-
-                        let modeLabel =
-                            effectiveModes
-                            |> List.map ModeConfig.label
-                            |> List.sort
-                            |> String.concat " + "
-
-                        P $"Found %d{infos.Length} file(s) to process (mode: %s{modeLabel})"
-                        |> toConsole
-
-                        Display.displayAnalysis infos args.Mode
-
-                        if args.Mode = WebOptimise.Mode.Remux then
-                            Display.displayRemuxWarnings infos
-
-                        if args.DryRun then
-                            let dryVerbs =
-                                effectiveModes
-                                |> List.map ModeConfig.completionVerb
-                                |> List.distinct
-
-                            let dryVerb =
-                                match dryVerbs with
-                                | [ single ] -> single
-                                | _ -> "processed"
-
-                            E $"Dry run \u2014 no files were %s{dryVerb}." |> toConsole
-                            return PipelineOutcome.DryRun
-                        else
-
-                            return PipelineOutcome.Process(args, infos, effectiveModes)
+                    let! input = parseAndValidate argv
+                    do! validateEnvironment env
+                    let! discovered = discover env input
+                    return! analyse env discovered
                 }
-
-            let! pipelineResult = pipeline
-
-            match pipelineResult with
+            with
             | Error e ->
-                Display.printError (AppError.message e)
+                Display.printError (AppError.format e)
                 return 1
-            | Ok PipelineOutcome.NothingToDo -> return 0
-            | Ok PipelineOutcome.DryRun -> return 0
-            | Ok(PipelineOutcome.Process(args, infos, effectiveModes)) ->
-                return! runProcessing args infos effectiveModes
+            | Ok pipeline ->
+                let infos = NonEmpty.toList pipeline.Infos
+
+                let modeLabel =
+                    pipeline.Modes
+                    |> List.map ModeConfig.label
+                    |> List.sort
+                    |> String.concat " + "
+
+                P $"Found %d{NonEmpty.length pipeline.Infos} file(s) to process (mode: %s{modeLabel})"
+                |> toConsole
+
+                Display.displayAnalysis infos pipeline.Input.Mode
+
+                if pipeline.Input.Mode = WebOptimise.Mode.Remux then
+                    Display.displayRemuxWarnings infos
+
+                if pipeline.Input.DryRun then
+                    let dryVerb =
+                        pipeline.Modes
+                        |> List.map ModeConfig.completionVerb
+                        |> List.distinct
+                        |> function
+                            | [ single ] -> single
+                            | _ -> "processed"
+
+                    E $"Dry run \u2014 no files were %s{dryVerb}." |> toConsole
+                    return 0
+                else
+                    return! execute env pipeline
         }

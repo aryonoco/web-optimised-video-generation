@@ -9,13 +9,13 @@ module Discovery =
 
     val sanitiseFilename: guid: Guid -> name: string -> ext: OutputExtension -> string
 
-    val matchExistingOutput: files: string list -> originalName: string -> ext: OutputExtension -> string option
+    val matchExistingOutput: files: string list -> originalName: string -> ext: OutputExtension -> string voption
 
     val effectiveMode: info: MediaFileInfo -> userMode: Mode -> Mode
 
     val outputDir: info: MediaFileInfo -> string
 
-    val collectFiles: resolved: ResolvedPath list -> Result<MediaFilePath list, AppError>
+    val collectFiles: resolved: ResolvedPath list -> Result<NonEmpty<MediaFilePath>, AppError>
 
     val rejectMkvEncode: files: MediaFilePath list -> mode: Mode -> Result<unit, AppError>
 

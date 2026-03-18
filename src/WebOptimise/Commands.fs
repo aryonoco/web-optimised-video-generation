@@ -1,17 +1,9 @@
 namespace WebOptimise
 
-[<Struct; RequireQualifiedAccess>]
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
 type VideoAction =
     | Copy
-    | Encode of
-        preset: string *
-        crf: int *
-        profile: string *
-        level: string *
-        gopSize: int *
-        minKeyint: int *
-        bframes: int *
-        x264Params: string
+    | EncodeX264 of X264Settings
 
 [<Struct; RequireQualifiedAccess>]
 type AudioAction = | Copy
@@ -47,28 +39,28 @@ module Commands =
                 "-c:v"
                 "copy"
               ]
-            | VideoAction.Encode(preset, crf, profile, level, gopSize, minKeyint, bframes, x264Params) ->
+            | VideoAction.EncodeX264 s ->
                 [
                     "-c:v"
                     "libx264"
                     "-preset"
-                    preset
+                    s.Preset
                     "-crf"
-                    crf.ToString()
+                    s.Crf.ToString()
                     "-profile:v"
-                    profile
+                    s.Profile
                     "-level:v"
-                    level
+                    s.Level
                     "-pix_fmt"
                     "yuv420p"
                     "-g"
-                    gopSize.ToString()
+                    s.GopSize.ToString()
                     "-keyint_min"
-                    minKeyint.ToString()
+                    s.MinKeyint.ToString()
                     "-bf"
-                    bframes.ToString()
+                    s.BFrames.ToString()
                     "-x264-params"
-                    x264Params
+                    s.X264Params
                 ]
         "-c:a"
         "copy"
@@ -111,16 +103,16 @@ module Commands =
             Input = info.Path
             Output = output
             Video =
-                VideoAction.Encode(
-                    Constants.Preset,
-                    Constants.Crf,
-                    Constants.Profile,
-                    Constants.Level,
-                    gopSize,
-                    fps,
-                    Constants.BFrames,
-                    Constants.X264Params
-                )
+                VideoAction.EncodeX264 {
+                    Preset = Constants.Preset
+                    Crf = Constants.Crf
+                    Profile = Constants.Profile
+                    Level = Constants.Level
+                    GopSize = gopSize
+                    MinKeyint = fps
+                    BFrames = Constants.BFrames
+                    X264Params = Constants.X264Params
+                }
             Audio = AudioAction.Copy
             Container = Container.Mp4Faststart
             StripMetadata = true

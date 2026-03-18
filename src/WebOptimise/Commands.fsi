@@ -1,17 +1,9 @@
 namespace WebOptimise
 
-[<Struct; RequireQualifiedAccess>]
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
 type VideoAction =
     | Copy
-    | Encode of
-        preset: string *
-        crf: int *
-        profile: string *
-        level: string *
-        gopSize: int *
-        minKeyint: int *
-        bframes: int *
-        x264Params: string
+    | EncodeX264 of X264Settings
 
 [<Struct; RequireQualifiedAccess>]
 type AudioAction = | Copy

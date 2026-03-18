@@ -4,7 +4,7 @@ open System.Threading.Tasks
 
 type CmdBuilder = MediaFileInfo -> OutputPath -> FfmpegCmd
 
-type Verifier = OutputPath -> Task<Result<unit, string list>>
+type Verifier = Env -> OutputPath -> Task<Result<unit, VerificationIssue list>>
 
 [<NoComparison; NoEquality>]
 type ModeConfig = {

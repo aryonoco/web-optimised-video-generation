@@ -3,6 +3,7 @@ namespace WebOptimise
 open System
 open System.IO
 open System.Text.Json
+open FsToolkit.ErrorHandling
 
 [<RequireQualifiedAccess>]
 module NullSafe =
@@ -27,8 +28,6 @@ module MediaFilePath =
             Ok(MediaFilePath path)
 
     let value (MediaFilePath p) = p
-
-    let ofTrusted (path: string) = MediaFilePath path
 
     let name (MediaFilePath p) = Path.GetFileName p |> NullSafe.path
 
@@ -67,6 +66,40 @@ module ShellError =
         | ShellError.Failed(tool, msg) -> $"%s{tool}: %s{msg}"
 
 [<Struct>]
+type NonEmpty<'T> = | NonEmpty of head: 'T * tail: 'T list
+
+[<RequireQualifiedAccess>]
+module NonEmpty =
+
+    let singleton (v: 'T) : NonEmpty<'T> = NonEmpty(v, [])
+
+    let ofList (xs: 'T list) : NonEmpty<'T> voption =
+        match xs with
+        | [] -> ValueNone
+        | h :: t -> ValueSome(NonEmpty(h, t))
+
+    let toList (NonEmpty(h, t)) : 'T list = h :: t
+
+    let head (NonEmpty(h, _)) : 'T = h
+
+    let length (NonEmpty(_, t)) : int = 1 + List.length t
+
+    let map (f: 'T -> 'U) (NonEmpty(h, t)) : NonEmpty<'U> = NonEmpty(f h, List.map f t)
+
+    let fold (folder: 'S -> 'T -> 'S) (state: 'S) (NonEmpty(h, t)) : 'S = List.fold folder (folder state h) t
+
+    let iter (f: 'T -> unit) (NonEmpty(h, t)) : unit =
+        f h
+        List.iter f t
+
+    let traverseResultM (f: 'T -> Result<'U, 'E>) (NonEmpty(h, t)) : Result<NonEmpty<'U>, 'E> =
+        result {
+            let! h' = f h
+            let! t' = List.traverseResultM f t
+            return NonEmpty(h', t')
+        }
+
+[<Struct>]
 type OutputPath = private | OutputPath of string
 
 [<RequireQualifiedAccess>]
@@ -85,32 +118,6 @@ type ResolvedPath =
     | File of fullPath: string * ext: string
     | Directory of fullPath: string * files: string list
     | NotFound of originalPath: string
-
-// Error DU
-
-[<RequireQualifiedAccess; NoComparison; NoEquality>]
-type AppError =
-    | ProbeError of message: string
-    | EncodeError of message: string * cmd: string list voption
-    | ValidationError of message: string
-    | IoError of message: string
-
-[<RequireQualifiedAccess>]
-module AppError =
-
-    let message =
-        function
-        | AppError.ProbeError msg -> msg
-        | AppError.EncodeError(msg, _) -> msg
-        | AppError.ValidationError msg -> msg
-        | AppError.IoError msg -> msg
-
-    let ofShellError (e: ShellError) =
-        match e with
-        | ShellError.NotFound _ -> AppError.ValidationError(ShellError.format e)
-        | ShellError.Cancelled -> AppError.IoError(ShellError.format e)
-        | ShellError.NonZeroExit _ -> AppError.EncodeError(ShellError.format e, ValueNone)
-        | ShellError.Failed _ -> AppError.EncodeError(ShellError.format e, ValueNone)
 
 [<Struct; RequireQualifiedAccess>]
 type Mode =
@@ -196,6 +203,158 @@ module VideoProfile =
         | VideoProfile.Main -> "Main"
         | VideoProfile.Baseline -> "Baseline"
         | VideoProfile.Other n -> n
+
+// Structured error types
+
+[<Struct; RequireQualifiedAccess>]
+type ProbeField =
+    | VideoCodec
+    | VideoWidth
+    | VideoHeight
+    | FrameRate
+    | AudioCodec
+    | FormatSection
+    | Duration
+    | FileSize
+    | VideoStream
+
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
+type ProbeFailure =
+    | ShellFailed of shellError: ShellError * file: MediaFilePath
+    | NonZeroExit of exitCode: int * stderr: string * file: MediaFilePath
+    | JsonParseFailed of exnMessage: string * file: MediaFilePath
+    | MissingField of field: ProbeField * file: MediaFilePath
+
+[<Struct; RequireQualifiedAccess; NoComparison; NoEquality>]
+type MkvCodecViolation =
+    | WrongVideoCodec of mkvFileName: string * mkvActualCodec: VideoCodec
+    | MissingAudio of mkvMissingFileName: string
+    | WrongAudioCodec of mkvAudioFileName: string * mkvActualAudioCodec: AudioCodec
+
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
+type ValidationFailure =
+    | UnknownMode of input: string
+    | NoPaths
+    | NoSupportedFiles
+    | UnsupportedExtension of ext: string * fullPath: string
+    | PathNotFound of path: string
+    | InvalidPath of reason: string
+    | MkvEncodeNotSupported of fileNames: string list
+    | MkvCodecViolations of violations: MkvCodecViolation list
+    | ArguError of argu: string
+    | ToolNotFound of toolName: string
+
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
+type ProcessFailure =
+    | FfmpegFailed of exitCode: int * stderr: string * cmd: string list * fileName: string * verb: string
+    | Cancelled
+    | OutputDirFailed of dirPath: string * exnMessage: string
+    | ShellFailed of shellError: ShellError
+
+[<Struct; RequireQualifiedAccess>]
+type VerificationIssue =
+    | ProfileMismatch of expected: string * actual: string
+    | NoVideoStream
+    | FaststartMissing
+    | AtomPositionUnknown
+    | KeyframeIntervalTooLarge of avgInterval: float * expectedSecs: int
+    | CuesNotFront of cuesReason: string
+    | CheckFailed of checkReason: string
+    | FileReadFailed of readReason: string
+
+[<RequireQualifiedAccess>]
+module VerificationIssue =
+
+    let format =
+        function
+        | VerificationIssue.ProfileMismatch(expected, actual) -> $"Expected %s{expected} profile, got '%s{actual}'"
+        | VerificationIssue.NoVideoStream -> "No video stream found"
+        | VerificationIssue.FaststartMissing -> "faststart not applied: moov atom is after mdat"
+        | VerificationIssue.AtomPositionUnknown -> "Could not determine moov/mdat positions"
+        | VerificationIssue.KeyframeIntervalTooLarge(avg, expected) ->
+            $"Keyframe interval too large: %.1f{avg}s (expected ~%d{expected}s)"
+        | VerificationIssue.CuesNotFront reason -> reason
+        | VerificationIssue.CheckFailed reason -> reason
+        | VerificationIssue.FileReadFailed reason -> $"Could not read file for verification: %s{reason}"
+
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
+type AppError =
+    | Probe of ProbeFailure
+    | Validation of ValidationFailure
+    | Process of ProcessFailure
+    | Multiple of errors: NonEmpty<AppError>
+
+[<RequireQualifiedAccess>]
+module AppError =
+
+    let private formatProbeField =
+        function
+        | ProbeField.VideoCodec -> "video codec"
+        | ProbeField.VideoWidth -> "video width"
+        | ProbeField.VideoHeight -> "video height"
+        | ProbeField.FrameRate -> "frame rate"
+        | ProbeField.AudioCodec -> "audio codec"
+        | ProbeField.FormatSection -> "format section"
+        | ProbeField.Duration -> "duration"
+        | ProbeField.FileSize -> "file size"
+        | ProbeField.VideoStream -> "video stream"
+
+    let private formatProbe =
+        function
+        | ProbeFailure.ShellFailed(e, file) ->
+            $"ffprobe failed for %s{MediaFilePath.name file}: %s{ShellError.format e}"
+        | ProbeFailure.NonZeroExit(code, stderr, file) ->
+            $"ffprobe failed for %s{MediaFilePath.name file}: exit code %d{code}\n%s{stderr}"
+        | ProbeFailure.JsonParseFailed(msg, file) ->
+            $"Failed to parse ffprobe JSON for %s{MediaFilePath.name file}: %s{msg}"
+        | ProbeFailure.MissingField(field, file) ->
+            $"Missing or invalid %s{formatProbeField field} in %s{MediaFilePath.name file}"
+
+    let private formatMkvViolation =
+        function
+        | MkvCodecViolation.WrongVideoCodec(name, codec) ->
+            $"  %s{name}: video codec is %s{VideoCodec.displayName codec} (requires AV1 for WebM)"
+        | MkvCodecViolation.MissingAudio name -> $"  %s{name}: no audio stream found (requires Opus for WebM)"
+        | MkvCodecViolation.WrongAudioCodec(name, codec) ->
+            $"  %s{name}: audio codec is %s{AudioCodec.displayName codec} (requires Opus for WebM)"
+
+    let private formatValidation =
+        function
+        | ValidationFailure.UnknownMode s -> $"Unknown mode: '%s{s}'. Use 'remux' or 'encode'."
+        | ValidationFailure.NoPaths -> "No paths provided."
+        | ValidationFailure.NoSupportedFiles -> "No supported media files found."
+        | ValidationFailure.UnsupportedExtension(ext, path) -> $"Unsupported file type '%s{ext}': %s{path}"
+        | ValidationFailure.PathNotFound path -> $"Path does not exist: %s{path}"
+        | ValidationFailure.InvalidPath reason -> $"Invalid path: %s{reason}"
+        | ValidationFailure.MkvEncodeNotSupported names ->
+            let joined = names |> String.concat ", "
+            $"--mode encode is not supported for MKV files: %s{joined}"
+        | ValidationFailure.MkvCodecViolations violations ->
+            "MKV codec requirements not met:\n"
+            + (violations
+               |> List.map formatMkvViolation
+               |> String.concat "\n")
+        | ValidationFailure.ArguError msg -> msg
+        | ValidationFailure.ToolNotFound tool -> $"%s{tool} not found in PATH"
+
+    let private formatProcess =
+        function
+        | ProcessFailure.FfmpegFailed(code, stderr, _, fileName, verb) ->
+            $"%s{verb} failed for %s{fileName}: exit code %d{code}\n%s{stderr}"
+        | ProcessFailure.Cancelled -> "Operation cancelled"
+        | ProcessFailure.OutputDirFailed(dir, msg) -> $"Cannot create output directory '%s{dir}': %s{msg}"
+        | ProcessFailure.ShellFailed e -> ShellError.format e
+
+    let rec format =
+        function
+        | AppError.Probe e -> formatProbe e
+        | AppError.Validation e -> formatValidation e
+        | AppError.Process e -> formatProcess e
+        | AppError.Multiple errors ->
+            errors
+            |> NonEmpty.toList
+            |> List.map format
+            |> String.concat "\n"
 
 // Domain records
 
@@ -294,6 +453,20 @@ module EncodeResult =
         let pct = savingsPct r
         let sign = if pct > 0.0 then "+" else ""
         $"%s{sign}%.1f{pct}%%"
+
+[<NoComparison; NoEquality>]
+type X264Settings = {
+    Preset: string
+    Crf: int
+    Profile: string
+    Level: string
+    GopSize: int
+    MinKeyint: int
+    BFrames: int
+    X264Params: string
+}
+
+type ProgressReporter = float -> unit
 
 // Active patterns
 

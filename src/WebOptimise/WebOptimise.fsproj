@@ -19,6 +19,8 @@
     <Compile Include="Domain.fs" />
     <Compile Include="Shell.fsi" />
     <Compile Include="Shell.fs" />
+    <Compile Include="Capabilities.fsi" />
+    <Compile Include="Capabilities.fs" />
     <Compile Include="ProbeParse.fsi" />
     <Compile Include="ProbeParse.fs" />
     <Compile Include="Commands.fsi" />

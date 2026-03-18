@@ -11,8 +11,10 @@ type MediaFilePath = private MediaFilePath of string
 module MediaFilePath =
 
     let create (path: string) : Result<MediaFilePath, string> =
-        if File.Exists path then Ok(MediaFilePath path)
-        else Error $"File does not exist: %s{path}"
+        if File.Exists path then
+            Ok(MediaFilePath path)
+        else
+            Error $"File does not exist: %s{path}"
 
     let value (MediaFilePath p) = p
 
@@ -32,6 +34,7 @@ module MediaFilePath =
 [<Struct>]
 type OutputExtension = private OutputExtension of string
 
+[<RequireQualifiedAccess>]
 module OutputExtension =
 
     let mp4 = OutputExtension ".mp4"
@@ -42,13 +45,14 @@ module OutputExtension =
 
 // Error DU
 
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
 type AppError =
     | ProbeError of message: string
     | EncodeError of message: string * cmd: string list voption
     | ValidationError of message: string
     | IoError of message: string
 
+[<RequireQualifiedAccess>]
 module AppError =
 
     let message =
@@ -60,6 +64,7 @@ module AppError =
 
 // Domain records
 
+[<NoComparison; NoEquality>]
 type VideoStream =
     { Codec: string
       Profile: string
@@ -68,12 +73,14 @@ type VideoStream =
       FrameRate: float
       Bitrate: int64 voption }
 
+[<NoComparison; NoEquality>]
 type AudioStream =
     { Codec: string
       Channels: int
       SampleRate: int
       Bitrate: int64 voption }
 
+[<NoComparison; NoEquality>]
 type MediaFileInfo =
     { Path: MediaFilePath
       DurationSecs: float
@@ -81,6 +88,7 @@ type MediaFileInfo =
       Video: VideoStream
       Audio: AudioStream voption }
 
+[<NoComparison; NoEquality>]
 type EncodeResult =
     { InputPath: MediaFilePath
       OutputPath: string
@@ -91,6 +99,7 @@ type ProcessResult = EncodeResult * Mode
 
 // Module functions for computed properties
 
+[<RequireQualifiedAccess>]
 module VideoStream =
 
     let resolutionLabel (s: VideoStream) =
@@ -105,6 +114,7 @@ module VideoStream =
         | ValueSome br -> $"%d{br / Constants.BitsPerKbit} kbps"
         | ValueNone -> "N/A"
 
+[<RequireQualifiedAccess>]
 module MediaFileInfo =
 
     let durationDisplay (info: MediaFileInfo) =
@@ -122,11 +132,14 @@ module MediaFileInfo =
     let sizeMB (info: MediaFileInfo) =
         float info.SizeBytes / float Constants.BytesPerMB
 
+[<RequireQualifiedAccess>]
 module EncodeResult =
 
     let savingsPct (r: EncodeResult) =
-        if r.InputSize = 0L then 0.0
-        else float (r.OutputSize - r.InputSize) / float r.InputSize * 100.0
+        if r.InputSize = 0L then
+            0.0
+        else
+            float (r.OutputSize - r.InputSize) / float r.InputSize * 100.0
 
     let savingsDisplay (r: EncodeResult) =
         let pct = savingsPct r
@@ -135,6 +148,7 @@ module EncodeResult =
 
 // Pure helpers
 
+[<RequireQualifiedAccess>]
 module Parse =
 
     let frameRate (fpsStr: string) : float =

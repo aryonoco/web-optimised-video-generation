@@ -9,6 +9,7 @@ open CliWrap
 open FsToolkit.ErrorHandling
 
 /// ffmpeg execution with progress tracking.
+[<RequireQualifiedAccess>]
 module Process =
 
     let private parseProgressLine (onProgress: float -> unit) (totalDuration: float) (line: string) =
@@ -42,55 +43,56 @@ module Process =
             | Error e -> return Error e
             | Ok() ->
 
-            let outputPath =
-                Path.Combine(outputDir, Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
+                let outputPath =
+                    Path.Combine(outputDir, Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
 
-            let args = config.CmdBuilder info outputPath
-            let stdErrBuilder = StringBuilder()
+                let args = config.CmdBuilder info outputPath
+                let stdErrBuilder = StringBuilder()
 
-            let cmd =
-                Cli.Wrap("ffmpeg")
-                    .WithArguments(args)
-                    .WithValidation(CommandResultValidation.None)
-                    .WithStandardOutputPipe(PipeTarget.ToDelegate(parseProgressLine onProgress info.DurationSecs))
-                    .WithStandardErrorPipe(PipeTarget.ToStringBuilder(stdErrBuilder))
+                let cmd =
+                    Cli
+                        .Wrap("ffmpeg")
+                        .WithArguments(args)
+                        .WithValidation(CommandResultValidation.None)
+                        .WithStandardOutputPipe(PipeTarget.ToDelegate(parseProgressLine onProgress info.DurationSecs))
+                        .WithStandardErrorPipe(PipeTarget.ToStringBuilder(stdErrBuilder))
 
-            try
-                let! result = cmd.ExecuteAsync(ct)
+                try
+                    let! result = cmd.ExecuteAsync(ct)
 
-                if result.ExitCode <> 0 then
+                    if result.ExitCode <> 0 then
+                        if File.Exists outputPath then
+                            File.Delete outputPath
+
+                        let stderr = stdErrBuilder.ToString()
+
+                        return
+                            Error(
+                                AppError.EncodeError(
+                                    $"%s{config.ErrorVerb} failed for %s{MediaFilePath.name info.Path}: exit code %d{result.ExitCode}\n%s{stderr}",
+                                    ValueSome("ffmpeg" :: args)
+                                )
+                            )
+                    else
+                        let outputSize = System.IO.FileInfo(outputPath).Length
+
+                        return
+                            Ok
+                                { InputPath = info.Path
+                                  OutputPath = outputPath
+                                  InputSize = info.SizeBytes
+                                  OutputSize = outputSize }
+                with
+                | :? OperationCanceledException ->
                     if File.Exists outputPath then
                         File.Delete outputPath
 
-                    let stderr = stdErrBuilder.ToString()
+                    return Error(AppError.IoError "Operation cancelled")
+                | ex ->
+                    if File.Exists outputPath then
+                        File.Delete outputPath
 
-                    return
-                        Error(
-                            AppError.EncodeError(
-                                $"%s{config.ErrorVerb} failed for %s{MediaFilePath.name info.Path}: exit code %d{result.ExitCode}\n%s{stderr}",
-                                ValueSome("ffmpeg" :: args)
-                            )
-                        )
-                else
-                    let outputSize = System.IO.FileInfo(outputPath).Length
-
-                    return
-                        Ok
-                            { InputPath = info.Path
-                              OutputPath = outputPath
-                              InputSize = info.SizeBytes
-                              OutputSize = outputSize }
-            with
-            | :? OperationCanceledException ->
-                if File.Exists outputPath then
-                    File.Delete outputPath
-
-                return Error(AppError.IoError "Operation cancelled")
-            | ex ->
-                if File.Exists outputPath then
-                    File.Delete outputPath
-
-                return Error(AppError.EncodeError($"Unexpected error: %s{ex.Message}", ValueNone))
+                    return Error(AppError.EncodeError($"Unexpected error: %s{ex.Message}", ValueNone))
         }
 
     let processFile

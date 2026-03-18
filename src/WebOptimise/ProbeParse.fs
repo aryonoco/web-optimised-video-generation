@@ -6,6 +6,7 @@ open FsToolkit.ErrorHandling
 
 #nowarn 3261
 
+[<RequireQualifiedAccess>]
 module ProbeParse =
 
     let private jsonOptions =
@@ -22,8 +23,10 @@ module ProbeParse =
 
     let private parseVideoStream (raw: RawStream) : VideoStream =
         let fps =
-            if isNull raw.RFrameRate then 0.0
-            else Parse.frameRate raw.RFrameRate
+            if isNull raw.RFrameRate then
+                0.0
+            else
+                Parse.frameRate raw.RFrameRate
 
         { Codec = if isNull raw.CodecName then "unknown" else raw.CodecName
           Profile = if isNull raw.Profile then "unknown" else raw.Profile
@@ -44,7 +47,10 @@ module ProbeParse =
                 try
                     Ok(JsonSerializer.Deserialize<RawProbeData>(json, jsonOptions))
                 with ex ->
-                    Error(AppError.ProbeError $"Failed to parse ffprobe JSON for %s{MediaFilePath.name path}: %s{ex.Message}")
+                    Error(
+                        AppError.ProbeError
+                            $"Failed to parse ffprobe JSON for %s{MediaFilePath.name path}: %s{ex.Message}"
+                    )
 
             let! videoRaw =
                 findFirstStream "video" data.Streams

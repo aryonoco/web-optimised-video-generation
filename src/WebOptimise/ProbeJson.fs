@@ -5,7 +5,7 @@ open System.Text.Json.Serialization
 /// Mutable DTOs for System.Text.Json deserialization of ffprobe JSON output.
 /// These exist only at the parsing boundary and are immediately converted to domain types.
 
-[<CLIMutable>]
+[<CLIMutable; NoComparison; NoEquality>]
 type RawStream =
     { [<JsonPropertyName("codec_type")>]
       CodecType: string
@@ -34,7 +34,7 @@ type RawStream =
       [<JsonPropertyName("bit_rate")>]
       BitRate: string }
 
-[<CLIMutable>]
+[<CLIMutable; NoComparison; NoEquality>]
 type RawFormat =
     { [<JsonPropertyName("duration")>]
       Duration: string
@@ -42,7 +42,7 @@ type RawFormat =
       [<JsonPropertyName("size")>]
       Size: string }
 
-[<CLIMutable>]
+[<CLIMutable; NoComparison; NoEquality>]
 type RawProbeData =
     { [<JsonPropertyName("streams")>]
       Streams: RawStream array

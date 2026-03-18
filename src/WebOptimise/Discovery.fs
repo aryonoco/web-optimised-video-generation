@@ -7,6 +7,7 @@ open System.Text.RegularExpressions
 open FsToolkit.ErrorHandling
 
 /// File discovery, filename utilities, and mode resolution.
+[<RequireQualifiedAccess>]
 module Discovery =
 
     let private nonNullPath (s: string | null) =
@@ -20,8 +21,7 @@ module Discovery =
     let private isSupported (ext: string) =
         Constants.supportedExtensions.Contains ext
 
-    let private isMkv (ext: string) =
-        Constants.mkvExtensions.Contains ext
+    let private isMkv (ext: string) = Constants.mkvExtensions.Contains ext
 
     let private slugify (name: string) =
         let stem = Path.GetFileNameWithoutExtension name |> nonNullPath
@@ -41,8 +41,10 @@ module Discovery =
             None
 
     let effectiveMode (info: MediaFileInfo) (userMode: Mode) : Mode =
-        if isMkv (MediaFilePath.extension info.Path) then Webm
-        else userMode
+        if isMkv (MediaFilePath.extension info.Path) then
+            Mode.Webm
+        else
+            userMode
 
     let outputDir (info: MediaFileInfo) : string =
         Path.Combine(MediaFilePath.directory info.Path, Constants.OutputDirName)
@@ -70,8 +72,13 @@ module Discovery =
                         Directory.EnumerateFiles resolved
                         |> Seq.filter (fun f ->
                             isSupported (Path.GetExtension f |> nonNullPath)
-                            && (Path.GetDirectoryName f |> nonNullPath |> Path.GetFileName |> nonNullPath) <> Constants.OutputDirName)
-                        |> Seq.sortWith (fun a b -> naturalComparer.Compare(Path.GetFileName a |> nonNullPath, Path.GetFileName b |> nonNullPath))
+                            && (Path.GetDirectoryName f |> nonNullPath |> Path.GetFileName |> nonNullPath)
+                               <> Constants.OutputDirName)
+                        |> Seq.sortWith (fun a b ->
+                            naturalComparer.Compare(
+                                Path.GetFileName a |> nonNullPath,
+                                Path.GetFileName b |> nonNullPath
+                            ))
 
                     for f in files do
                         let full = Path.GetFullPath f
@@ -87,16 +94,16 @@ module Discovery =
 
     let rejectMkvEncode (files: MediaFilePath list) (mode: Mode) : Result<unit, AppError> =
         match mode with
-        | Encode ->
-            let mkvFiles =
-                files |> List.filter (fun f -> isMkv (MediaFilePath.extension f))
+        | Mode.Encode ->
+            let mkvFiles = files |> List.filter (fun f -> isMkv (MediaFilePath.extension f))
 
             if mkvFiles.IsEmpty then
                 Ok()
             else
                 let names = mkvFiles |> List.map MediaFilePath.name |> String.concat ", "
                 Error(AppError.ValidationError $"--mode encode is not supported for MKV files: %s{names}")
-        | _ -> Ok()
+        | Mode.Remux
+        | Mode.Webm -> Ok()
 
     let validateMkvCodecs (infos: MediaFileInfo list) : Result<unit, AppError> =
         let errors =
@@ -112,7 +119,7 @@ module Discovery =
                           $"%s{MediaFilePath.name info.Path}: no audio stream found (requires Opus for WebM)"
                       | ValueSome audio when audio.Codec <> "opus" ->
                           $"%s{MediaFilePath.name info.Path}: audio codec is %s{audio.Codec} (requires Opus for WebM)"
-                      | _ -> () ])
+                      | ValueSome _ -> () ])
 
         if errors.IsEmpty then
             Ok()

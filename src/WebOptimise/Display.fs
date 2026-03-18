@@ -6,6 +6,7 @@ open System.Threading.Tasks
 open Spectre.Console
 
 /// Spectre.Console display functions for CLI output.
+[<RequireQualifiedAccess>]
 module Display =
 
     let private nonNullPath (s: string | null) =
@@ -123,11 +124,13 @@ module Display =
 
             match verifyResult with
             | Ok() ->
-                AnsiConsole.MarkupLine $"  [green]\u2713[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> nonNullPath)}"
+                AnsiConsole.MarkupLine
+                    $"  [green]\u2713[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> nonNullPath)}"
             | Error issues ->
                 allOk <- false
 
-                AnsiConsole.MarkupLine $"  [red]\u2717[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> nonNullPath)}"
+                AnsiConsole.MarkupLine
+                    $"  [red]\u2717[/] %s{Markup.Escape(Path.GetFileName result.OutputPath |> nonNullPath)}"
 
                 for issue in issues do
                     AnsiConsole.MarkupLine $"    [red]\u2192[/] %s{Markup.Escape issue}"
@@ -136,7 +139,8 @@ module Display =
 
     let withProgress
         (infos: MediaFileInfo list)
-        (processOne: MediaFileInfo -> Mode -> (float -> unit) -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
+        (processOne:
+            MediaFileInfo -> Mode -> (float -> unit) -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
         (userMode: Mode)
         (ct: CancellationToken)
         : Task<Result<ProcessResult list, AppError>> =

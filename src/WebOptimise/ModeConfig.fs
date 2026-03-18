@@ -6,6 +6,7 @@ type CmdBuilder = MediaFileInfo -> string -> string list
 
 type Verifier = string -> Result<unit, string list>
 
+[<NoComparison; NoEquality>]
 type ModeConfig =
     { CmdBuilder: CmdBuilder
       Verifier: Verifier
@@ -14,11 +15,12 @@ type ModeConfig =
       Label: string
       CompletionVerb: string }
 
+[<RequireQualifiedAccess>]
 module ModeConfig =
 
     let private configs: FrozenDictionary<Mode, ModeConfig> =
         (dict
-            [ Remux,
+            [ Mode.Remux,
               { CmdBuilder = Commands.buildRemuxCmd
                 Verifier = Verify.verifyRemuxed
                 OutputExt = OutputExtension.mp4
@@ -26,7 +28,7 @@ module ModeConfig =
                 Label = "remux"
                 CompletionVerb = "optimised" }
 
-              Encode,
+              Mode.Encode,
               { CmdBuilder = Commands.buildEncodeCmd
                 Verifier = Verify.verifyEncoded
                 OutputExt = OutputExtension.mp4
@@ -34,7 +36,7 @@ module ModeConfig =
                 Label = "encode"
                 CompletionVerb = "encoded" }
 
-              Webm,
+              Mode.Webm,
               { CmdBuilder = Commands.buildWebmRemuxCmd
                 Verifier = Verify.verifyWebm
                 OutputExt = OutputExtension.webm

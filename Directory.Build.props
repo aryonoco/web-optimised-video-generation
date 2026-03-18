@@ -7,12 +7,11 @@
     <Nullable>enable</Nullable>
     <ParallelCompilation>true</ParallelCompilation>
 
-    <!-- Maximum strictness -->
+    <!-- F# compiler strictness -->
+    <WarningLevel>5</WarningLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarnOn>3390;3391;3395</WarnOn>
-    <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisLevel>latest-all</AnalysisLevel>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <WarnOn>0020;0025;0026;1104;1182;3218;3366;3390;3391;3395</WarnOn>
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
 
     <!-- Trimming (F# 10 auto-generates ILLink substitutions) -->
     <PublishTrimmed>true</PublishTrimmed>

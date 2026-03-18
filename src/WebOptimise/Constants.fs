@@ -80,6 +80,7 @@ module Constants =
     [<Literal>]
     let HeaderScanSize = 1_048_576 // 1 MB
 
+[<Struct; RequireQualifiedAccess>]
 type Mode =
     | Remux
     | Encode

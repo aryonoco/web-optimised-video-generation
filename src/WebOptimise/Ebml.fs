@@ -3,14 +3,17 @@ namespace WebOptimise
 open System
 
 /// Pure EBML binary parser for Matroska/WebM container verification.
+[<RequireQualifiedAccess>]
 module Ebml =
 
     let private cuesElementId = ReadOnlyMemory([| 0x1Cuy; 0x53uy; 0xBBuy; 0x6Buy |])
     let private clusterElementId = ReadOnlyMemory([| 0x1Fuy; 0x43uy; 0xB6uy; 0x75uy |])
 
     let private vintWidth (firstByte: byte) : int =
-        if firstByte = 0uy then 0
-        else 9 - (int (System.Numerics.BitOperations.Log2 (uint firstByte)) + 1)
+        if firstByte = 0uy then
+            0
+        else
+            9 - (int (System.Numerics.BitOperations.Log2(uint firstByte)) + 1)
 
     let private readElementId (data: ReadOnlySpan<byte>) (pos: int) : struct (ReadOnlyMemory<byte> * int) =
         if pos >= data.Length then
@@ -42,8 +45,7 @@ module Ebml =
                 let masked = value &&& (mask >>> width)
                 struct (int masked, pos + width)
 
-    let private spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) =
-        a.Span.SequenceEqual(b.Span)
+    let private spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) = a.Span.SequenceEqual(b.Span)
 
     /// Check that EBML Cues element appears before the first Cluster element.
     /// Returns Ok () if Cues is front-loaded, Error with a message otherwise.

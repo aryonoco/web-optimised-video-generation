@@ -12,29 +12,32 @@ open Spectre.Console
 type CliArgs =
     | [<MainCommand; ExactlyOnce; Last>] Paths of path: string list
     | [<AltCommandLine("-m")>] Mode of mode: string
-    | [<AltCommandLine("-n")>] Dry_Run
+    | [<AltCommandLine("-n")>] DryRun
     | [<AltCommandLine("-f")>] Overwrite
 
     interface IArgParserTemplate with
         member this.Usage =
             match this with
             | Paths _ -> "media file(s) or directory(ies) to process"
-            | Mode _ -> "processing mode for MP4/M4V/MOV: 'remux' (default) or 'encode'. MKV files are always remuxed to WebM."
-            | Dry_Run -> "show what would be processed without encoding"
+            | Mode _ ->
+                "processing mode for MP4/M4V/MOV: 'remux' (default) or 'encode'. MKV files are always remuxed to WebM."
+            | DryRun -> "show what would be processed without encoding"
             | Overwrite -> "re-process even if output file already exists"
 
+[<NoComparison; NoEquality>]
 type ParsedArgs =
     { Paths: string list
       Mode: WebOptimise.Mode
       DryRun: bool
       Overwrite: bool }
 
+[<RequireQualifiedAccess>]
 module Cli =
 
     let private parseMode (s: string) : Result<WebOptimise.Mode, AppError> =
         match s.ToLowerInvariant() with
-        | "remux" -> Ok Remux
-        | "encode" -> Ok Encode
+        | "remux" -> Ok WebOptimise.Mode.Remux
+        | "encode" -> Ok WebOptimise.Mode.Encode
         | other -> Error(AppError.ValidationError $"Unknown mode: '%s{other}'. Use 'remux' or 'encode'.")
 
     let private parseArgs (argv: string array) : Result<ParsedArgs, AppError> =
@@ -50,7 +53,7 @@ module Cli =
 
             let paths = results.GetResult(Paths, defaultValue = [])
             let modeStr = results.GetResult(Mode, defaultValue = "remux")
-            let dryRun = results.Contains Dry_Run
+            let dryRun = results.Contains DryRun
             let overwrite = results.Contains Overwrite
 
             result {
@@ -71,19 +74,13 @@ module Cli =
     let private validateEnvironment () : Result<unit, AppError> =
         let check (tool: string) =
             try
-                Cli.Wrap(tool)
-                    .WithArguments([ "-version" ])
-                    .ExecuteBufferedAsync()
-                    .GetAwaiter()
-                    .GetResult()
+                Cli.Wrap(tool).WithArguments([ "-version" ]).ExecuteBufferedAsync().GetAwaiter().GetResult()
                 |> ignore
 
                 Ok()
             with
-            | :? System.ComponentModel.Win32Exception ->
-                Error(AppError.ValidationError $"%s{tool} not found in PATH")
-            | ex ->
-                Error(AppError.ValidationError $"%s{tool} failed to run: %s{ex.Message}")
+            | :? System.ComponentModel.Win32Exception -> Error(AppError.ValidationError $"%s{tool} not found in PATH")
+            | ex -> Error(AppError.ValidationError $"%s{tool} failed to run: %s{ex.Message}")
 
         result {
             do! check "ffmpeg"
@@ -111,8 +108,7 @@ module Cli =
 
             if probeResult.ExitCode <> 0 then
                 Error(
-                    AppError.ProbeError
-                        $"ffprobe failed for %s{MediaFilePath.name path}: %s{probeResult.StandardError}"
+                    AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{probeResult.StandardError}"
                 )
             else
                 ProbeParse.fromJson path probeResult.StandardOutput
@@ -142,44 +138,38 @@ module Cli =
                         return None
                     else
 
-                    do! Discovery.rejectMkvEncode files args.Mode
+                        do! Discovery.rejectMkvEncode files args.Mode
 
-                    let! infos =
-                        files
-                        |> List.map probeFile
-                        |> List.sequenceResultM
-                        |> Result.mapError (fun e -> e)
+                        let! infos = files |> List.map probeFile |> List.sequenceResultM
 
-                    do! Discovery.validateMkvCodecs infos
+                        do! Discovery.validateMkvCodecs infos
 
-                    let effectiveModes =
-                        infos
-                        |> List.map (fun i -> Discovery.effectiveMode i args.Mode)
-                        |> List.distinct
+                        let effectiveModes =
+                            infos
+                            |> List.map (fun i -> Discovery.effectiveMode i args.Mode)
+                            |> List.distinct
 
-                    let modeLabel =
-                        effectiveModes |> List.map ModeConfig.label |> List.sort |> String.concat " + "
+                        let modeLabel =
+                            effectiveModes |> List.map ModeConfig.label |> List.sort |> String.concat " + "
 
-                    AnsiConsole.MarkupLine
-                        $"\n[bold]Found %d{infos.Length} file(s) to process[/] (mode: %s{modeLabel})\n"
+                        AnsiConsole.MarkupLine
+                            $"\n[bold]Found %d{infos.Length} file(s) to process[/] (mode: %s{modeLabel})\n"
 
-                    Display.displayAnalysis infos args.Mode
+                        Display.displayAnalysis infos args.Mode
 
-                    if args.Mode = Remux then
-                        Display.displayRemuxWarnings infos
+                        if args.Mode = WebOptimise.Mode.Remux then
+                            Display.displayRemuxWarnings infos
 
-                    if args.DryRun then
-                        let dryVerbs =
-                            effectiveModes |> List.map ModeConfig.completionVerb |> List.distinct
+                        if args.DryRun then
+                            let dryVerbs = effectiveModes |> List.map ModeConfig.completionVerb |> List.distinct
 
-                        let dryVerb =
-                            if dryVerbs.Length = 1 then dryVerbs.Head else "processed"
+                            let dryVerb = if dryVerbs.Length = 1 then dryVerbs.Head else "processed"
 
-                        AnsiConsole.MarkupLine $"\n[yellow]Dry run \u2014 no files were %s{dryVerb}.[/]"
-                        return None
-                    else
+                            AnsiConsole.MarkupLine $"\n[yellow]Dry run \u2014 no files were %s{dryVerb}.[/]"
+                            return None
+                        else
 
-                    return Some(args, infos, effectiveModes)
+                            return Some(args, infos, effectiveModes)
                 }
 
             match pipeline with
@@ -194,8 +184,7 @@ module Cli =
                     e.Cancel <- true
                     cts.Cancel())
 
-                let! progressResult =
-                    Display.withProgress infos (processOne args) args.Mode cts.Token
+                let! progressResult = Display.withProgress infos (processOne args) args.Mode cts.Token
 
                 match progressResult with
                 | Error e ->
@@ -208,8 +197,7 @@ module Cli =
                     Display.printSummary (resultsWithModes |> List.map fst)
 
                     if allOk then
-                        let verbs =
-                            effectiveModes |> List.map ModeConfig.completionVerb |> List.distinct
+                        let verbs = effectiveModes |> List.map ModeConfig.completionVerb |> List.distinct
 
                         let verb = if verbs.Length = 1 then verbs.Head else "processed"
 

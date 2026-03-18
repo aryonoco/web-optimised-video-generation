@@ -7,12 +7,14 @@ open CliWrap
 open CliWrap.Buffered
 
 /// Output file verification. Mix of shell (CliWrap subprocess) and pure checks.
+[<RequireQualifiedAccess>]
 module Verify =
 
     let private runFfprobe (args: string list) =
         try
             let result =
-                Cli.Wrap("ffprobe")
+                Cli
+                    .Wrap("ffprobe")
                     .WithArguments(args)
                     .WithValidation(CommandResultValidation.None)
                     .ExecuteBufferedAsync()
@@ -35,8 +37,7 @@ module Verify =
                     seq { for i in 0 .. streams.GetArrayLength() - 1 -> streams[i] }
                     |> Seq.tryFind (fun s ->
                         let mutable elem = Unchecked.defaultof<JsonElement>
-                        s.TryGetProperty("codec_type", &elem)
-                        && elem.GetString() = "video")
+                        s.TryGetProperty("codec_type", &elem) && elem.GetString() = "video")
 
                 match videoStream with
                 | None -> Some "No video stream found"
@@ -102,8 +103,7 @@ module Verify =
             let keyframeTimes = parseKeyframeTimes result.StandardOutput
 
             if keyframeTimes.Length >= Constants.MinKeyframesForCheck then
-                let sampleCount =
-                    min (keyframeTimes.Length - 1) Constants.MaxKeyframeSample
+                let sampleCount = min (keyframeTimes.Length - 1) Constants.MaxKeyframeSample
 
                 let intervals =
                     [ for i in 0 .. sampleCount - 1 -> keyframeTimes[i + 1] - keyframeTimes[i] ]
@@ -134,9 +134,7 @@ module Verify =
 
     let verifyEncoded (path: string) : Result<unit, string list> =
         let issues =
-            [ checkVideoProfile path
-              checkFaststart path
-              checkKeyframeIntervals path ]
+            [ checkVideoProfile path; checkFaststart path; checkKeyframeIntervals path ]
             |> List.choose id
 
         if issues.IsEmpty then Ok() else Error issues

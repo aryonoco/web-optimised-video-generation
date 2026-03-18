@@ -72,24 +72,23 @@ module Display =
         table.AddColumn(TableColumn("Output Size").RightAligned()) |> ignore
         table.AddColumn(TableColumn("Change").RightAligned()) |> ignore
 
-        let mutable totalInput = 0L
-        let mutable totalOutput = 0L
+        let struct (totalInput, totalOutput) =
+            (struct (0L, 0L), results)
+            ||> List.fold (fun (struct (ti, to')) r ->
+                let inputMb = float r.InputSize / float Constants.BytesPerMB
+                let outputMb = float r.OutputSize / float Constants.BytesPerMB
+                let style = if EncodeResult.savingsPct r < 0.0 then "green" else "red"
 
-        for r in results do
-            totalInput <- totalInput + r.InputSize
-            totalOutput <- totalOutput + r.OutputSize
-            let inputMb = float r.InputSize / float Constants.BytesPerMB
-            let outputMb = float r.OutputSize / float Constants.BytesPerMB
-            let style = if EncodeResult.savingsPct r < 0.0 then "green" else "red"
+                table.AddRow(
+                    Markup.Escape(MediaFilePath.name r.InputPath),
+                    Markup.Escape(Path.GetFileName r.OutputPath |> NullSafe.path),
+                    $"%.1f{inputMb} MB",
+                    $"%.1f{outputMb} MB",
+                    $"[%s{style}]%s{EncodeResult.savingsDisplay r}[/%s{style}]"
+                )
+                |> ignore
 
-            table.AddRow(
-                Markup.Escape(MediaFilePath.name r.InputPath),
-                Markup.Escape(Path.GetFileName r.OutputPath |> NullSafe.path),
-                $"%.1f{inputMb} MB",
-                $"%.1f{outputMb} MB",
-                $"[%s{style}]%s{EncodeResult.savingsDisplay r}[/%s{style}]"
-            )
-            |> ignore
+                struct (ti + r.InputSize, to' + r.OutputSize))
 
         if totalInput > 0L then
             let totalInputMb = float totalInput / float Constants.BytesPerMB
@@ -173,11 +172,11 @@ module Display =
                                     match! processOne info fileMode onProgress ct with
                                     | Ok encodeResult ->
                                         progressTask.Value <- info.DurationSecs
-                                        results <- results @ [ (encodeResult, fileMode) ]
+                                        results <- (encodeResult, fileMode) :: results
                                     | Error e -> error <- ValueSome e
                         })
 
             match error with
             | ValueSome e -> return Error e
-            | ValueNone -> return Ok results
+            | ValueNone -> return Ok(List.rev results)
         }

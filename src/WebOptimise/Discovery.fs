@@ -45,47 +45,40 @@ module Discovery =
         Path.Combine(MediaFilePath.directory info.Path, Constants.OutputDirName)
 
     let findFiles (paths: string list) : Result<MediaFilePath list, AppError> =
-        result {
-            let mutable found: string list = []
-            let mutable seen = Set.empty<string>
+        let addIfNew (found, seen) full =
+            if Set.contains full seen then (found, seen)
+            else (full :: found, Set.add full seen)
 
-            for p in paths do
-                let resolved = Path.GetFullPath p
+        let processPath (found, seen) p =
+            let resolved = Path.GetFullPath p
 
-                if File.Exists resolved then
-                    let ext = Path.GetExtension resolved |> NullSafe.path
+            if File.Exists resolved then
+                let ext = Path.GetExtension resolved |> NullSafe.path
 
-                    if not (isSupported ext) then
-                        return! Error(AppError.ValidationError $"Unsupported file type '%s{ext}': %s{p}")
-
-                    if not (seen.Contains resolved) then
-                        seen <- seen.Add resolved
-                        found <- found @ [ resolved ]
-
-                elif Directory.Exists resolved then
-                    let files =
-                        Directory.EnumerateFiles resolved
-                        |> Seq.filter (fun f ->
-                            isSupported (Path.GetExtension f |> NullSafe.path)
-                            && (Path.GetDirectoryName f |> NullSafe.path |> Path.GetFileName |> NullSafe.path)
-                               <> Constants.OutputDirName)
-                        |> Seq.sortWith (fun a b ->
-                            naturalComparer.Compare(
-                                Path.GetFileName a |> NullSafe.path,
-                                Path.GetFileName b |> NullSafe.path
-                            ))
-
-                    for f in files do
-                        let full = Path.GetFullPath f
-
-                        if not (seen.Contains full) then
-                            seen <- seen.Add full
-                            found <- found @ [ full ]
+                if not (isSupported ext) then
+                    Error(AppError.ValidationError $"Unsupported file type '%s{ext}': %s{p}")
                 else
-                    return! Error(AppError.ValidationError $"Path does not exist: %s{p}")
+                    Ok(addIfNew (found, seen) resolved)
+            elif Directory.Exists resolved then
+                let files =
+                    Directory.EnumerateFiles resolved
+                    |> Seq.filter (fun f ->
+                        isSupported (Path.GetExtension f |> NullSafe.path)
+                        && (Path.GetDirectoryName f |> NullSafe.path |> Path.GetFileName |> NullSafe.path)
+                           <> Constants.OutputDirName)
+                    |> Seq.sortWith (fun a b ->
+                        naturalComparer.Compare(
+                            Path.GetFileName a |> NullSafe.path,
+                            Path.GetFileName b |> NullSafe.path
+                        ))
 
-            return found |> List.map MediaFilePath.ofTrusted
-        }
+                Ok(Seq.fold (fun (f, s) file -> addIfNew (f, s) (Path.GetFullPath file)) (found, seen) files)
+            else
+                Error(AppError.ValidationError $"Path does not exist: %s{p}")
+
+        paths
+        |> List.fold (fun acc p -> acc |> Result.bind (fun state -> processPath state p)) (Ok([], Set.empty))
+        |> Result.map (fun (found, _) -> found |> List.rev |> List.map MediaFilePath.ofTrusted)
 
     let rejectMkvEncode (files: MediaFilePath list) (mode: Mode) : Result<unit, AppError> =
         match mode with

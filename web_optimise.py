@@ -6,7 +6,7 @@
 # ]
 # ///
 """
-Optimise MP4 files for progressive web delivery.
+Optimise media files for progressive web delivery.
 
 Default "remux" mode applies container-level optimisations without
 re-encoding: faststart (moov before mdat), metadata/chapter stripping,
@@ -16,6 +16,10 @@ Optional "encode" mode re-encodes video to H.264 High profile with
 2-second keyframes for responsive seeking via media-chrome.  Audio is
 stream-copied unchanged.
 
+MKV files containing AV1 video and Opus audio are automatically remuxed
+to streaming-optimised WebM with cues-to-front, 2-second cluster
+alignment, and metadata stripping.
+
 Output files are written to a 'web-optimised' subdirectory.
 
 Prerequisites:
@@ -24,6 +28,7 @@ Prerequisites:
 Usage:
     ./web_optimise.py video.mp4                     # remux (default)
     ./web_optimise.py --mode encode video.mp4       # full re-encode
+    ./web_optimise.py video.mkv                     # MKV→WebM (auto)
     ./web_optimise.py /path/to/directory/
     ./web_optimise.py --dry-run dir/
 """
@@ -36,6 +41,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -54,12 +60,15 @@ from rich.table import Table
 #  CONSTANTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-SUPPORTED_EXTENSIONS: Final[frozenset[str]] = frozenset({".mp4", ".m4v", ".mov"})
+SUPPORTED_EXTENSIONS: Final[frozenset[str]] = frozenset({".mp4", ".m4v", ".mov", ".mkv"})
 OUTPUT_DIR_NAME: Final[str] = "web-optimised"
 
 # Processing modes
 MODE_REMUX: Final[str] = "remux"
 MODE_ENCODE: Final[str] = "encode"
+MODE_WEBM: Final[str] = "webm"
+
+_MKV_EXTENSIONS: Final[frozenset[str]] = frozenset({".mkv"})
 
 # x264 encoding settings
 CRF: Final[int] = 25
@@ -83,6 +92,12 @@ _MAX_KEYFRAME_SAMPLE: Final[int] = 10
 _MAX_ACCEPTABLE_KEYFRAME_INTERVAL: Final[float] = 3.0
 _MAX_WEB_FRAME_RATE: Final[int] = 30
 
+# EBML element IDs for WebM verification
+_EBML_CUES_ID: Final[bytes] = b"\x1c\x53\xbb\x6b"
+_EBML_CLUSTER_ID: Final[bytes] = b"\x1f\x43\xb6\x75"
+_EBML_SEEKHEAD_SKIP: Final[int] = 200
+_WEBM_HEADER_READ_SIZE: Final[int] = 8192
+
 # Unit conversion
 _BYTES_PER_MB: Final[int] = 1024 * 1024
 _MICROSECONDS_PER_SECOND: Final[int] = 1_000_000
@@ -91,6 +106,13 @@ _SECONDS_PER_MINUTE: Final[int] = 60
 _BITS_PER_KBIT: Final[int] = 1000
 
 console: Final[Console] = Console()
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TYPE ALIASES
+# ══════════════════════════════════════════════════════════════════════════════
+
+type CmdBuilder = Callable[[Path, Path], tuple[str, ...]]
+type Verifier = Callable[[Path], tuple[bool, list[str]]]
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  EXCEPTIONS
@@ -279,6 +301,8 @@ class EncodeResult:
         return f"{sign}{pct:.1f}%"
 
 
+type ProcessResult = tuple[EncodeResult, str]
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  PRIVATE HELPER FUNCTIONS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -334,37 +358,86 @@ def _slugify(name: str) -> str:
     return slug or "unnamed"
 
 
-def _sanitise_filename(name: str) -> str:
+def _sanitise_filename(name: str, *, ext: str) -> str:
     """
     Produce a safe, lowercase, UUID-prefixed filename from an original name.
 
-    Only ``[a-z0-9-]`` survive in the slug portion.  Always outputs ``.mp4``.
+    Only ``[a-z0-9-]`` survive in the slug portion.  The output extension
+    is determined by *ext*.
+
+    Args:
+        name: Original filename (used to derive the slug).
+        ext: Output extension including the dot (e.g. ``".mp4"``, ``".webm"``).
 
     Example:
-        ``"Session 1 … Recording.mp4"``
+        ``_sanitise_filename("Session 1 … Recording.mp4", ext=".mp4")``
         → ``"a1b2c3d4-…-ef12_session-1-recording.mp4"``
 
     """
-    return f"{uuid.uuid4()}_{_slugify(name)}.mp4"
+    return f"{uuid.uuid4()}_{_slugify(name)}{ext}"
 
 
 def _find_existing_output(
     output_dir: Path,
     original_name: str,
+    *,
+    ext: str,
 ) -> Path | None:
     """
     Find an existing output file matching the sanitised slug of *original_name*.
 
-    Scans *output_dir* for files whose name ends with ``_{slug}.mp4``.
+    Scans *output_dir* for files whose name ends with ``_{slug}{ext}``.
 
     """
-    suffix = f"_{_slugify(original_name)}.mp4"
+    suffix = f"_{_slugify(original_name)}{ext}"
     if not output_dir.exists():
         return None
     for candidate in output_dir.iterdir():
         if candidate.name.endswith(suffix) and candidate.is_file():
             return candidate
     return None
+
+
+def _effective_mode(info: FileInfo, *, user_mode: str) -> str:
+    """
+    Determine the processing mode for a file based on its container type.
+
+    MKV files always use MODE_WEBM (auto-detected).
+    MP4/M4V/MOV files use the user-specified mode.
+    """
+    if info.path.suffix.lower() in _MKV_EXTENSIONS:
+        return MODE_WEBM
+    return user_mode
+
+
+def _validate_mkv_codecs(infos: tuple[FileInfo, ...]) -> None:
+    """
+    Validate that MKV files contain AV1 video and Opus audio.
+
+    WebM containers require AV1/VP8/VP9 video and Opus/Vorbis audio.
+    This script requires AV1 + Opus specifically.
+
+    Raises:
+        ValidationError: If any MKV file has incompatible codecs.
+
+    """
+    errors: list[str] = []
+    for info in infos:
+        if info.path.suffix.lower() not in _MKV_EXTENSIONS:
+            continue
+        if info.video.codec != "av1":
+            errors.append(
+                f"{info.path.name}: video codec is {info.video.codec} (requires AV1 for WebM)"
+            )
+        if info.audio is None:
+            errors.append(f"{info.path.name}: no audio stream found (requires Opus for WebM)")
+        elif info.audio.codec != "opus":
+            errors.append(
+                f"{info.path.name}: audio codec is {info.audio.codec} (requires Opus for WebM)"
+            )
+    if errors:
+        msg = "MKV codec requirements not met:\n" + "\n".join(f"  {e}" for e in errors)
+        raise ValidationError(msg)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -541,11 +614,61 @@ def build_remux_cmd(
     )
 
 
+def build_webm_remux_cmd(
+    input_path: Path,
+    output_path: Path,
+    /,
+) -> tuple[str, ...]:
+    """
+    Build the ffmpeg command for MKV-to-WebM remux optimisation.
+
+    Stream-copies AV1 video and Opus audio, selects first video and audio
+    streams, places Cues (seek index) at front, aligns clusters to
+    2-second keyframe boundaries, and strips metadata and chapters.
+    """
+    return (
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(input_path),
+        # Stream copy (no re-encoding)
+        "-c:v",
+        "copy",
+        "-c:a",
+        "copy",
+        # Stream selection
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0",
+        # WebM container format
+        "-f",
+        "webm",
+        # Container optimisation
+        "-cues_to_front",
+        "true",
+        "-cluster_time_limit",
+        "2000",
+        "-write_crc32",
+        "false",
+        # Strip metadata
+        "-map_metadata",
+        "-1",
+        "-map_chapters",
+        "-1",
+        # Progress output on stdout
+        "-progress",
+        "pipe:1",
+        str(output_path),
+    )
+
+
 def find_files(paths: tuple[Path, ...], /) -> tuple[Path, ...]:
     """
-    Resolve CLI arguments to a deduplicated tuple of MP4 file paths.
+    Resolve CLI arguments to a deduplicated tuple of media file paths.
 
-    Handle both individual files and directories. Directories are scanned
+    Handles both individual files and directories.  Directories are scanned
     non-recursively for files with extensions in SUPPORTED_EXTENSIONS.
     Files already inside a directory named OUTPUT_DIR_NAME are skipped.
 
@@ -607,21 +730,21 @@ def process_file(
     output_dir: Path,
     /,
     *,
-    mode: str = MODE_REMUX,
-    overwrite: bool = False,
+    mode: str,
+    overwrite: bool,
     progress: Progress,
     task_id: int,
 ) -> EncodeResult:
     """
     Process a single file for web delivery.
 
-    In remux mode, stream-copies with container-level optimisations.
-    In encode mode, fully re-encodes to H.264 High profile.
+    Dispatches to the command builder and verifier registered in
+    ``_MODE_CONFIGS`` for the given *mode* (remux, encode, or webm).
 
     Args:
         info: Probed file metadata.
         output_dir: Directory to write the output file.
-        mode: Processing mode (MODE_REMUX or MODE_ENCODE).
+        mode: Processing mode (MODE_REMUX, MODE_ENCODE, or MODE_WEBM).
         overwrite: If True, overwrite existing output files.
         progress: Rich Progress instance for updating the progress bar.
         task_id: Rich task ID to update.
@@ -630,7 +753,12 @@ def process_file(
         EncodeError: If ffmpeg exits with a non-zero return code.
 
     """
-    existing = _find_existing_output(output_dir, info.path.name)
+    config = _MODE_CONFIGS[mode]
+    existing = _find_existing_output(
+        output_dir,
+        info.path.name,
+        ext=config.output_ext,
+    )
 
     if existing is not None and not overwrite:
         progress.update(task_id, completed=info.duration_secs)
@@ -644,11 +772,11 @@ def process_file(
         existing.unlink()
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / _sanitise_filename(info.path.name)
-    if mode == MODE_ENCODE:
-        cmd = build_ffmpeg_cmd(info.path, output_path)
-    else:
-        cmd = build_remux_cmd(info.path, output_path)
+    output_path = output_dir / _sanitise_filename(
+        info.path.name,
+        ext=config.output_ext,
+    )
+    cmd = config.cmd_builder(info.path, output_path)
 
     proc = subprocess.Popen(  # noqa: S603 — cmd is built from hardcoded constants
         cmd,
@@ -681,8 +809,10 @@ def process_file(
         stderr_output = "".join(stderr_chunks)
         if output_path.exists():
             output_path.unlink()
-        verb = "Encoding" if mode == MODE_ENCODE else "Remuxing"
-        msg = f"{verb} failed for {info.path.name}: exit code {proc.returncode}\n{stderr_output}"
+        msg = (
+            f"{config.error_verb} failed for {info.path.name}:"
+            f" exit code {proc.returncode}\n{stderr_output}"
+        )
         raise EncodeError(msg, cmd=cmd)
 
     return EncodeResult(
@@ -752,6 +882,45 @@ def verify_remux_output(path: Path, /) -> tuple[bool, list[str]]:
     issues: list[str] = []
     _check_faststart(path, issues)
     return len(issues) == 0, issues
+
+
+def verify_webm_output(path: Path, /) -> tuple[bool, list[str]]:
+    """
+    Verify WebM output file has Cues element at front.
+
+    Reads the file header and checks that the EBML Cues element appears
+    before the first Cluster element, confirming the seek index is
+    front-loaded for progressive web playback.
+
+    Returns:
+        Tuple of (all_ok, list_of_issues).
+
+    """
+    issues: list[str] = []
+    _check_cues_front(path, issues)
+    return len(issues) == 0, issues
+
+
+def _check_cues_front(path: Path, issues: list[str]) -> None:
+    """Verify Cues element appears before first Cluster in WebM file."""
+    try:
+        with path.open("rb") as f:
+            header = f.read(_WEBM_HEADER_READ_SIZE)
+    except OSError as err:
+        issues.append(f"Could not read file for verification: {err}")
+        return
+
+    # Skip the SeekHead area to avoid matching the Cues reference
+    # in the SeekHead rather than the actual Cues element.
+    cues_pos = header.find(_EBML_CUES_ID, _EBML_SEEKHEAD_SKIP)
+    cluster_pos = header.find(_EBML_CLUSTER_ID, _EBML_SEEKHEAD_SKIP)
+
+    if cluster_pos == -1:
+        issues.append("Could not find Cluster element in file header")
+    elif cues_pos == -1:
+        issues.append("Cues not at front: seek index is at end of file")
+    elif cues_pos > cluster_pos:
+        issues.append("Cues not at front: Cues element appears after first Cluster")
 
 
 def _check_video_profile(path: Path, issues: list[str]) -> None:
@@ -857,6 +1026,56 @@ def _parse_keyframe_times(ffprobe_output: str) -> list[float]:
     return times
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  MODE CONFIGURATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True, slots=True)
+class ModeConfig:
+    """Per-mode dispatch configuration."""
+
+    cmd_builder: CmdBuilder
+    verifier: Verifier
+    output_ext: str
+    error_verb: str
+    label: str
+    completion_verb: str
+
+
+_MODE_CONFIGS: Final[dict[str, ModeConfig]] = {
+    MODE_REMUX: ModeConfig(
+        cmd_builder=build_remux_cmd,
+        verifier=verify_remux_output,
+        output_ext=".mp4",
+        error_verb="Remuxing",
+        label="remux",
+        completion_verb="optimised",
+    ),
+    MODE_ENCODE: ModeConfig(
+        cmd_builder=build_ffmpeg_cmd,
+        verifier=verify_output,
+        output_ext=".mp4",
+        error_verb="Encoding",
+        label="encode",
+        completion_verb="encoded",
+    ),
+    MODE_WEBM: ModeConfig(
+        cmd_builder=build_webm_remux_cmd,
+        verifier=verify_webm_output,
+        output_ext=".webm",
+        error_verb="WebM remuxing",
+        label="webm",
+        completion_verb="optimised",
+    ),
+}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DISPLAY AND SUMMARY
+# ══════════════════════════════════════════════════════════════════════════════
+
+
 def print_summary(results: tuple[EncodeResult, ...], /) -> None:
     """Print before/after file size comparison table."""
     table = Table(title="Encoding Results")
@@ -913,7 +1132,7 @@ def _add_totals_row(
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Optimise MP4 files for progressive web delivery.",
+        description="Optimise media files for progressive web delivery.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
@@ -921,8 +1140,10 @@ def parse_args() -> argparse.Namespace:
             "                     Remux (default)\n"
             "    %(prog)s --mode encode video.mp4"
             "        Full re-encode\n"
+            "    %(prog)s video.mkv"
+            "                     MKV to WebM (auto)\n"
             "    %(prog)s /path/to/directory/"
-            "           All MP4s in directory\n"
+            "           All media in directory\n"
             "    %(prog)s --dry-run dir/"
             "                Show what would be processed\n"
             "    %(prog)s --overwrite dir/"
@@ -934,16 +1155,17 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         type=Path,
         metavar="PATH",
-        help="MP4 file(s) or directory(ies) to process",
+        help="media file(s) or directory(ies) to process",
     )
     parser.add_argument(
         "--mode",
         choices=[MODE_REMUX, MODE_ENCODE],
         default=MODE_REMUX,
         help=(
-            "processing mode: 'remux' (default) applies container-level "
-            "optimisations without re-encoding; 'encode' fully re-encodes "
-            "video to H.264 High profile with 2-second keyframes"
+            "processing mode for MP4/M4V/MOV files: 'remux' (default) "
+            "applies container-level optimisations without re-encoding; "
+            "'encode' fully re-encodes video to H.264 High profile with "
+            "2-second keyframes. MKV files are always remuxed to WebM."
         ),
     )
     parser.add_argument(
@@ -959,7 +1181,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _display_analysis(infos: tuple[FileInfo, ...]) -> None:
+def _display_analysis(
+    infos: tuple[FileInfo, ...],
+    *,
+    user_mode: str,
+) -> None:
     """Print the pre-encode file analysis table."""
     table = Table(title="File Analysis")
     table.add_column("File", style="cyan")
@@ -971,9 +1197,11 @@ def _display_analysis(infos: tuple[FileInfo, ...]) -> None:
     table.add_column("Video Bitrate", justify="right")
 
     for info in infos:
+        file_mode = _effective_mode(info, user_mode=user_mode)
+        config = _MODE_CONFIGS[file_mode]
         table.add_row(
             info.path.name,
-            _sanitise_filename(info.path.name),
+            _sanitise_filename(info.path.name, ext=config.output_ext),
             info.duration_display,
             f"{info.size_mb:.1f} MB",
             info.video.resolution_label,
@@ -985,9 +1213,11 @@ def _display_analysis(infos: tuple[FileInfo, ...]) -> None:
 
 
 def _display_remux_warnings(infos: tuple[FileInfo, ...]) -> None:
-    """Print advisory notes about files that may benefit from full encoding."""
+    """Print advisory notes about MP4 files that may benefit from full encoding."""
     warnings: list[str] = []
     for info in infos:
+        if info.path.suffix.lower() in _MKV_EXTENSIONS:
+            continue
         name = info.path.name
         if info.video.codec != "h264":
             warnings.append(
@@ -1014,11 +1244,11 @@ def _display_remux_warnings(infos: tuple[FileInfo, ...]) -> None:
 def _process_all(
     infos: tuple[FileInfo, ...],
     *,
-    mode: str = MODE_REMUX,
+    mode: str,
     overwrite: bool,
-) -> tuple[EncodeResult, ...]:
+) -> tuple[ProcessResult, ...]:
     """Process all files sequentially with a rich progress bar."""
-    results: list[EncodeResult] = []
+    results: list[ProcessResult] = []
 
     with Progress(
         SpinnerColumn(),
@@ -1031,6 +1261,7 @@ def _process_all(
     ) as progress:
         for idx, info in enumerate(infos):
             output_dir = info.path.parent / OUTPUT_DIR_NAME
+            file_mode = _effective_mode(info, user_mode=mode)
             description = f"[{idx + 1}/{len(infos)}] {info.path.name}"
             task_id = progress.add_task(
                 description,
@@ -1040,27 +1271,23 @@ def _process_all(
             result = process_file(
                 info,
                 output_dir,
-                mode=mode,
+                mode=file_mode,
                 overwrite=overwrite,
                 progress=progress,
                 task_id=task_id,
             )
-            results.append(result)
+            results.append((result, file_mode))
 
     return tuple(results)
 
 
-def _verify_all(
-    results: tuple[EncodeResult, ...],
-    *,
-    mode: str = MODE_REMUX,
-) -> bool:
+def _verify_all(results: tuple[ProcessResult, ...]) -> bool:
     """Verify all output files and print results. Return True if all ok."""
     console.print("\n[bold]Verifying outputs...[/bold]")
     all_ok = True
-    verifier = verify_output if mode == MODE_ENCODE else verify_remux_output
-    for result in results:
-        ok, issues = verifier(result.output_path)
+    for result, file_mode in results:
+        config = _MODE_CONFIGS[file_mode]
+        ok, issues = config.verifier(result.output_path)
         if ok:
             console.print(f"  [green]✓[/green] {result.output_path.name}")
         else:
@@ -1082,36 +1309,50 @@ def main() -> None:
             console.print("[yellow]No supported media files found.[/yellow]")
             return
 
-        infos = tuple(probe_file(path) for path in files)
+        # Reject --mode encode with MKV files
+        mkv_files = [f for f in files if f.suffix.lower() in _MKV_EXTENSIONS]
+        if args.mode == MODE_ENCODE and mkv_files:
+            names = ", ".join(f.name for f in mkv_files)
+            msg = f"--mode encode is not supported for MKV files: {names}"
+            raise ValidationError(msg)
 
-        mode_label = "remux" if args.mode == MODE_REMUX else "encode"
+        infos = tuple(probe_file(path) for path in files)
+        _validate_mkv_codecs(infos)
+
+        effective_modes = {_effective_mode(info, user_mode=args.mode) for info in infos}
+        mode_label = " + ".join(
+            sorted(_MODE_CONFIGS[m].label for m in effective_modes),
+        )
         console.print(
             f"\n[bold]Found {len(infos)} file(s) to process[/bold] (mode: {mode_label})\n",
         )
-        _display_analysis(infos)
+        _display_analysis(infos, user_mode=args.mode)
 
         if args.mode == MODE_REMUX:
             _display_remux_warnings(infos)
 
         if args.dry_run:
+            dry_verbs = {_MODE_CONFIGS[m].completion_verb for m in effective_modes}
+            dry_verb = dry_verbs.pop() if len(dry_verbs) == 1 else "processed"
             console.print(
-                f"\n[yellow]Dry run — no files were {mode_label}ed.[/yellow]",
+                f"\n[yellow]Dry run — no files were {dry_verb}.[/yellow]",
             )
             return
 
-        results = _process_all(
+        results_with_modes = _process_all(
             infos,
             mode=args.mode,
             overwrite=args.overwrite,
         )
-        all_ok = _verify_all(results, mode=args.mode)
+        all_ok = _verify_all(results_with_modes)
 
         console.print()
-        print_summary(results)
+        print_summary(tuple(r for r, _ in results_with_modes))
 
         if all_ok:
-            n = len(results)
-            verb = "optimised" if args.mode == MODE_REMUX else "encoded"
+            n = len(results_with_modes)
+            verbs = {_MODE_CONFIGS[m].completion_verb for m in effective_modes}
+            verb = verbs.pop() if len(verbs) == 1 else "processed"
             console.print(
                 f"\n[bold green]Done![/bold green] {n} file(s) {verb}.",
             )

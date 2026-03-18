@@ -15,10 +15,7 @@ module Ebml =
         else
             9 - (int (System.Numerics.BitOperations.Log2(uint firstByte)) + 1)
 
-    let private readElementId
-        (data: ReadOnlySpan<byte>)
-        (pos: int)
-        : struct (ReadOnlyMemory<byte> * int) voption =
+    let private readElementId (data: ReadOnlySpan<byte>) (pos: int) : struct (ReadOnlyMemory<byte> * int) voption =
         if pos >= data.Length then
             ValueNone
         else
@@ -48,45 +45,46 @@ module Ebml =
                 let masked = value &&& (mask >>> width)
                 ValueSome(struct (int masked, pos + width))
 
-    let private spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) =
-        a.Span.SequenceEqual(b.Span)
+    let private spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) = a.Span.SequenceEqual(b.Span)
 
     let private skipEbmlHeader (data: ReadOnlySpan<byte>) : Result<int, string> =
         match readElementId data 0 with
         | ValueNone -> Error "Could not parse EBML header"
         | ValueSome(struct (_, pos1)) ->
 
-        match readElementSize data pos1 with
-        | ValueNone -> Error "Could not parse EBML header"
-        | ValueSome(struct (size, pos2)) -> Ok(pos2 + size)
+            match readElementSize data pos1 with
+            | ValueNone -> Error "Could not parse EBML header"
+            | ValueSome(struct (size, pos2)) -> Ok(pos2 + size)
 
     let private enterSegment (data: ReadOnlySpan<byte>) (pos: int) : Result<int, string> =
         match readElementId data pos with
         | ValueNone -> Error "Could not parse Segment element"
         | ValueSome(struct (_, segEnd)) ->
 
-        match readElementSize data segEnd with
-        | ValueNone -> Error "Could not parse Segment element"
-        | ValueSome(struct (_, dataStart)) -> Ok dataStart
+            match readElementSize data segEnd with
+            | ValueNone -> Error "Could not parse Segment element"
+            | ValueSome(struct (_, dataStart)) -> Ok dataStart
 
+    [<TailCall>]
     let rec private scanForCues (data: ReadOnlySpan<byte>) (pos: int) : Result<unit, string> =
         if pos >= data.Length then
             Error "Could not locate Cues or Cluster element in file header"
         else
 
-        match readElementId data pos with
-        | ValueNone -> Error "Could not locate Cues or Cluster element in file header"
-        | ValueSome(struct (eId, idEnd)) ->
+            match readElementId data pos with
+            | ValueNone -> Error "Could not locate Cues or Cluster element in file header"
+            | ValueSome(struct (eId, idEnd)) ->
 
-        match readElementSize data idEnd with
-        | ValueNone -> Error "Could not locate Cues or Cluster element in file header"
-        | ValueSome(struct (eSize, eDataStart)) ->
+                match readElementSize data idEnd with
+                | ValueNone -> Error "Could not locate Cues or Cluster element in file header"
+                | ValueSome(struct (eSize, eDataStart)) ->
 
-        if spanEqual eId cuesElementId then Ok()
-        elif spanEqual eId clusterElementId then
-            Error "Cues not at front: first Cluster appears before Cues element"
-        else
-            scanForCues data (eDataStart + eSize)
+                    if spanEqual eId cuesElementId then
+                        Ok()
+                    elif spanEqual eId clusterElementId then
+                        Error "Cues not at front: first Cluster appears before Cues element"
+                    else
+                        scanForCues data (eDataStart + eSize)
 
     /// Check that EBML Cues element appears before the first Cluster element.
     /// Returns Ok () if Cues is front-loaded, Error with a message otherwise.
@@ -95,10 +93,10 @@ module Ebml =
             Error "File too small for EBML verification"
         else
 
-        match skipEbmlHeader data with
-        | Error e -> Error e
-        | Ok segPos ->
+            match skipEbmlHeader data with
+            | Error e -> Error e
+            | Ok segPos ->
 
-        match enterSegment data segPos with
-        | Error e -> Error e
-        | Ok dataStart -> scanForCues data dataStart
+                match enterSegment data segPos with
+                | Error e -> Error e
+                | Ok dataStart -> scanForCues data dataStart

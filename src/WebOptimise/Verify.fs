@@ -145,8 +145,7 @@ module Verify =
 
     let verifyEncoded (path: string) : Task<Result<unit, string list>> =
         task {
-            let! results =
-                Task.WhenAll [| checkVideoProfile path; checkFaststart path; checkKeyframeIntervals path |]
+            let! results = Task.WhenAll [| checkVideoProfile path; checkFaststart path; checkKeyframeIntervals path |]
 
             let issues = results |> Array.choose id |> Array.toList
             return if issues.IsEmpty then Ok() else Error issues

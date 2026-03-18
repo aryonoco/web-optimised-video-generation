@@ -32,7 +32,8 @@ module MediaFilePath =
 
     let extension (MediaFilePath p) = Path.GetExtension p |> NullSafe.path
 
-    let directory (MediaFilePath p) = Path.GetDirectoryName p |> NullSafe.path
+    let directory (MediaFilePath p) =
+        Path.GetDirectoryName p |> NullSafe.path
 
 [<Struct>]
 type OutputExtension = private OutputExtension of string

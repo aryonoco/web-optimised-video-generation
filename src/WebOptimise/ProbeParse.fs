@@ -92,8 +92,7 @@ module ProbeParse =
             let! videoElem =
                 match findStream "video" root with
                 | ValueSome elem -> Ok elem
-                | ValueNone ->
-                    Error(AppError.ProbeError $"No video stream found in %s{MediaFilePath.name path}")
+                | ValueNone -> Error(AppError.ProbeError $"No video stream found in %s{MediaFilePath.name path}")
 
             let video = parseVideoStream videoElem
             let audio = findStream "audio" root |> ValueOption.map parseAudioStream

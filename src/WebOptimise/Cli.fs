@@ -115,8 +115,7 @@ module Cli =
                 else
                     return ProbeParse.fromJson path probeResult.StandardOutput
             with ex ->
-                return
-                    Error(AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{ex.Message}")
+                return Error(AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{ex.Message}")
         }
 
     let private processOne

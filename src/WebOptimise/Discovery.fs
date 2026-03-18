@@ -46,8 +46,10 @@ module Discovery =
 
     let findFiles (paths: string list) : Result<MediaFilePath list, AppError> =
         let addIfNew (found, seen) full =
-            if Set.contains full seen then (found, seen)
-            else (full :: found, Set.add full seen)
+            if Set.contains full seen then
+                (found, seen)
+            else
+                (full :: found, Set.add full seen)
 
         let processPath (found, seen) p =
             let resolved = Path.GetFullPath p

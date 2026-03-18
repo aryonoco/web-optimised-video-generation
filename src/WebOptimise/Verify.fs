@@ -9,22 +9,31 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module Verify =
 
-    let private runFfprobe (args: string list) : Task<Result<BufferedOutput, string>> = Shell.runBuffered "ffprobe" args
+    let runFfprobe (args: string list) : Task<Result<BufferedOutput, string>> = Shell.runBuffered "ffprobe" args
 
-    let private toValidation (check: Task<string option>) : Task<Result<unit, string list>> =
+    let toValidation (check: Task<string option>) : Task<Result<unit, string list>> =
         task {
             match! check with
             | None -> return Ok()
             | Some msg -> return Error [ msg ]
         }
 
-    let private checkVideoProfile (path: string) : Task<string option> =
+    let checkVideoProfile (path: string) : Task<string option> =
         task {
-            match! runFfprobe [ "-v"; "quiet"; "-print_format"; "json"; "-show_streams"; path ] with
+            match!
+                runFfprobe [
+                    "-v"
+                    "quiet"
+                    "-print_format"
+                    "json"
+                    "-show_streams"
+                    path
+                ]
+            with
             | Error msg -> return Some msg
             | Ok result ->
                 try
-                    let root = JsonDocument.Parse(result.StdOut).RootElement
+                    let root = JsonElement.Parse(result.StdOut)
 
                     let profile =
                         match root with
@@ -33,30 +42,41 @@ module Verify =
                             |> Seq.tryFind (fun s ->
                                 match s with
                                 | Json.Prop "codec_type" (Json.Str "video") -> true
-                                | _ -> false)
+                                | _ -> false
+                            )
                             |> Option.bind (fun s ->
                                 match s with
-                                | Json.Prop "profile" (Json.Str p) -> Some p
-                                | _ -> None)
+                                | Json.Prop "profile" (Json.Str p) -> Some(VideoProfile.ofString p)
+                                | _ -> None
+                            )
                         | _ -> None
 
                     match profile with
                     | None -> return Some "No video stream found"
-                    | Some p when not (p.Contains("High", StringComparison.Ordinal)) ->
-                        return Some $"Expected High profile, got '%s{p}'"
-                    | _ -> return None
+                    | Some VideoProfile.High -> return None
+                    | Some other -> return Some $"Expected High profile, got '%s{VideoProfile.displayName other}'"
                 with ex ->
                     return Some $"Failed to parse ffprobe output: %s{ex.Message}"
         }
 
-    let private checkFaststart (path: string) : Task<string option> =
+    let checkFaststart (path: string) : Task<string option> =
         task {
-            match! runFfprobe [ "-v"; "trace"; path ] with
+            match!
+                runFfprobe [
+                    "-v"
+                    "trace"
+                    path
+                ]
+            with
             | Error msg -> return Some msg
             | Ok result ->
                 let stderr = result.StdErr
-                let moovPos = stderr.IndexOf("type:'moov'", StringComparison.Ordinal)
-                let mdatPos = stderr.IndexOf("type:'mdat'", StringComparison.Ordinal)
+
+                let moovPos =
+                    stderr.IndexOf("type:'moov'", StringComparison.Ordinal)
+
+                let mdatPos =
+                    stderr.IndexOf("type:'mdat'", StringComparison.Ordinal)
 
                 if moovPos = -1 || mdatPos = -1 then
                     return Some "Could not determine moov/mdat positions"
@@ -66,27 +86,30 @@ module Verify =
                     return None
         }
 
-    let private parseKeyframeTimes (output: string) : float list =
+    let parseKeyframeTimes (output: string) : float list =
         output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
         |> Array.choose (fun line ->
             if line.Contains(",K", StringComparison.Ordinal) then
-                let pts = line.AsSpan().Slice(0, max 0 (line.IndexOf(','))).ToString()
+                let pts =
+                    line.AsSpan().Slice(0, max 0 (line.IndexOf(','))).ToString()
 
                 match Double.TryParse pts with
                 | true, v -> Some v
                 | _ -> None
             else
-                None)
+                None
+        )
         |> Array.toList
 
-    let private analyseKeyframeIntervals (output: string) : string option =
+    let analyseKeyframeIntervals (output: string) : string option =
         let keyframeTimes = parseKeyframeTimes output
 
         if keyframeTimes.Length >= Constants.MinKeyframesForCheck then
-            let sampleCount = min (keyframeTimes.Length - 1) Constants.MaxKeyframeSample
-
             let intervals =
-                [ for i in 0 .. sampleCount - 1 -> keyframeTimes[i + 1] - keyframeTimes[i] ]
+                keyframeTimes
+                |> List.pairwise
+                |> List.truncate Constants.MaxKeyframeSample
+                |> List.map (fun (a, b) -> b - a)
 
             let avgInterval = List.average intervals
 
@@ -97,19 +120,20 @@ module Verify =
         else
             None
 
-    let private checkKeyframeIntervals (path: string) : Task<string option> =
+    let checkKeyframeIntervals (path: string) : Task<string option> =
         task {
             let! probeResult =
-                runFfprobe
-                    [ "-v"
-                      "quiet"
-                      "-select_streams"
-                      "v:0"
-                      "-show_entries"
-                      "packet=pts_time,flags"
-                      "-of"
-                      "csv=p=0"
-                      path ]
+                runFfprobe [
+                    "-v"
+                    "quiet"
+                    "-select_streams"
+                    "v:0"
+                    "-show_entries"
+                    "packet=pts_time,flags"
+                    "-of"
+                    "csv=p=0"
+                    path
+                ]
 
             return
                 match probeResult with
@@ -117,12 +141,15 @@ module Verify =
                 | Ok result -> analyseKeyframeIntervals result.StdOut
         }
 
-    let private checkCuesFront (path: string) : Task<string option> =
+    let checkCuesFront (path: string) : Task<string option> =
         let result =
             try
                 let data =
                     use fs = File.OpenRead(path)
-                    let buf = Array.zeroCreate (min (int fs.Length) Constants.HeaderScanSize)
+
+                    let buf =
+                        Array.zeroCreate (min (int fs.Length) Constants.HeaderScanSize)
+
                     let bytesRead = fs.Read(buf, 0, buf.Length)
                     ReadOnlySpan(buf, 0, bytesRead)
 

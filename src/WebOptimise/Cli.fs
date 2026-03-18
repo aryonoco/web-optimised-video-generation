@@ -23,11 +23,12 @@ type CliArgs =
             | Overwrite -> "re-process even if output file already exists"
 
 [<NoComparison; NoEquality>]
-type ParsedArgs =
-    { Paths: string list
-      Mode: WebOptimise.Mode
-      DryRun: bool
-      Overwrite: bool }
+type ParsedArgs = {
+    Paths: string list
+    Mode: WebOptimise.Mode
+    DryRun: bool
+    Overwrite: bool
+}
 
 [<RequireQualifiedAccess>]
 module Cli =
@@ -60,34 +61,39 @@ module Cli =
                 if paths.IsEmpty then
                     return! Error(AppError.ValidationError "No paths provided.")
 
-                return
-                    { Paths = paths
-                      Mode = mode
-                      DryRun = dryRun
-                      Overwrite = overwrite }
+                return {
+                    Paths = paths
+                    Mode = mode
+                    DryRun = dryRun
+                    Overwrite = overwrite
+                }
             }
         with :? ArguParseException as ex ->
             Error(AppError.ValidationError ex.Message)
 
     let private validateEnvironment () : Task<Result<unit, AppError>> =
         taskResult {
-            do! Shell.runExists "ffmpeg" |> TaskResult.mapError AppError.ValidationError
+            do!
+                Shell.runExists "ffmpeg"
+                |> TaskResult.mapError AppError.ValidationError
 
-            do! Shell.runExists "ffprobe" |> TaskResult.mapError AppError.ValidationError
+            do!
+                Shell.runExists "ffprobe"
+                |> TaskResult.mapError AppError.ValidationError
         }
 
     let private probeFile (path: MediaFilePath) : Task<Result<MediaFileInfo, AppError>> =
         task {
             match!
-                Shell.runBuffered
-                    "ffprobe"
-                    [ "-v"
-                      "quiet"
-                      "-print_format"
-                      "json"
-                      "-show_streams"
-                      "-show_format"
-                      MediaFilePath.value path ]
+                Shell.runBuffered "ffprobe" [
+                    "-v"
+                    "quiet"
+                    "-print_format"
+                    "json"
+                    "-show_streams"
+                    "-show_format"
+                    MediaFilePath.value path
+                ]
             with
             | Error msg -> return Error(AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{msg}")
             | Ok probeResult ->
@@ -107,7 +113,8 @@ module Cli =
         (fileMode: WebOptimise.Mode)
         (onProgress: float -> unit)
         (ct: CancellationToken)
-        : Task<Result<EncodeResult, AppError>> =
+        : Task<Result<EncodeResult, AppError>>
+        =
         let outputDir = Discovery.outputDir info
         Process.processFile info outputDir fileMode args.Overwrite onProgress ct
 
@@ -117,7 +124,8 @@ module Cli =
 
             Console.CancelKeyPress.Add(fun e ->
                 e.Cancel <- true
-                cts.Cancel())
+                cts.Cancel()
+            )
 
             let! progressResult = Display.withProgress infos (processOne args) args.Mode cts.Token
 
@@ -129,7 +137,7 @@ module Cli =
                 let! allOk = Display.displayVerification resultsWithModes
 
                 NL |> toConsole
-                Display.printSummary (resultsWithModes |> List.map fst)
+                Display.printSummary (resultsWithModes |> List.map _.Result)
 
                 let verb =
                     effectiveModes
@@ -140,9 +148,11 @@ module Cli =
                         | _ -> "processed"
 
                 if allOk then
-                    P $"Done! %d{resultsWithModes.Length} file(s) %s{verb}." |> toConsole
+                    P $"Done! %d{resultsWithModes.Length} file(s) %s{verb}."
+                    |> toConsole
                 else
-                    E "Done with warnings. Check verification results above." |> toConsole
+                    E "Done with warnings. Check verification results above."
+                    |> toConsole
 
                 return 0
         }
@@ -172,7 +182,10 @@ module Cli =
                             |> List.distinct
 
                         let modeLabel =
-                            effectiveModes |> List.map ModeConfig.label |> List.sort |> String.concat " + "
+                            effectiveModes
+                            |> List.map ModeConfig.label
+                            |> List.sort
+                            |> String.concat " + "
 
                         P $"Found %d{infos.Length} file(s) to process (mode: %s{modeLabel})"
                         |> toConsole
@@ -183,9 +196,15 @@ module Cli =
                             Display.displayRemuxWarnings infos
 
                         if args.DryRun then
-                            let dryVerbs = effectiveModes |> List.map ModeConfig.completionVerb |> List.distinct
+                            let dryVerbs =
+                                effectiveModes
+                                |> List.map ModeConfig.completionVerb
+                                |> List.distinct
 
-                            let dryVerb = if dryVerbs.Length = 1 then dryVerbs.Head else "processed"
+                            let dryVerb =
+                                match dryVerbs with
+                                | [ single ] -> single
+                                | _ -> "processed"
 
                             E $"Dry run \u2014 no files were %s{dryVerb}." |> toConsole
                             return None

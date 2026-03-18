@@ -16,24 +16,17 @@ dotnet run --project src/WebOptimise -- <paths> [-m remux|encode] [-n] [-f]
 
 Requires .NET 10.0 SDK. Runtime dependencies: `ffmpeg` and `ffprobe` on PATH.
 
-## Format & Lint
+## Quality workflow: after each major phase
 
-```bash
-dotnet tool restore                                   # install fantomas, fsharplint, fsharp-analyzers
-dotnet fantomas src/                                  # format all F# sources
-dotnet fsharplint lint WebOptimise.slnx               # lint
-```
-
-All warnings are errors (`TreatWarningsAsErrors`). Nullable reference types and overflow checks are enabled.
-
-## Workflow: after each major phase
+All warnings are errors (`TreatWarningsAsErrors`). Nullable reference types and overflow checks are enabled. Run `dotnet tool restore` once to install fantomas, fsharplint, and fsharp-analyzers.
 
 After completing each significant section of work (a refactor, a new feature, a bug fix), run the full quality pipeline and fix every issue — never suppress or ignore errors/warnings:
 
-1. `dotnet fantomas src/` — format
-2. `dotnet fsharplint lint WebOptimise.slnx` — lint; fix all reported issues
-3. `dotnet build -c Release` — must produce zero warnings and zero errors
-4. `dotnet fsharp-analyzers --project src/WebOptimise/WebOptimise.fsproj --analyzers-path ~/.nuget/packages/g-research.fsharp.analyzers/0.22.0/analyzers/dotnet/fs/ --analyzers-path ~/.nuget/packages/ionide.analyzers/0.15.0/analyzers/dotnet/fs/ --verbosity d` — run both analyzer sets; fix all issues they report
+1. `dotnet fantomas src/` — format all source files
+2. `dotnet fantomas --check src/` — verify formatting (exit 0 = OK, exit 1 = needs formatting, exit 99 = error)
+3. `dotnet fsharplint lint WebOptimise.slnx` — lint; fix all reported issues
+4. `dotnet build -c Release` — must produce zero warnings and zero errors
+5. `dotnet fsharp-analyzers --project src/WebOptimise/WebOptimise.fsproj --analyzers-path ~/.nuget/packages/g-research.fsharp.analyzers/0.22.0/analyzers/dotnet/fs/ --analyzers-path ~/.nuget/packages/ionide.analyzers/0.15.0/analyzers/dotnet/fs/ --verbosity d` — run both analyzer sets; fix all issues they report
 
 ## Architecture
 
@@ -53,14 +46,9 @@ Matches the compile order in `.fsproj`: Constants → Domain → Shell → Probe
 
 `ModeConfig.fs` ties modes to their command builders, verifiers, and output extensions — the dispatch table that avoids match expressions scattered across modules.
 
-### Key patterns
+### Functional principles
 
-- **Branded types** in `Domain.fs`: `MediaFilePath`, `OutputExtension` — private constructors, smart constructors returning `Result`
-- **`Result<'T, AppError>`** throughout; `taskResult` CE from FsToolkit.ErrorHandling for async+Result composition
-- **`ValueOption` (voption)** for optional fields (audio stream, bitrate) — struct option for zero-alloc
-- **Active patterns** (`Int`, `Float`, `Json.Prop`, `Json.Str`) for parsing without external JSON libraries
-- **`Commands.fs` is pure**: builds ffmpeg argument lists with no side effects; `Shell.fs`/`Process.fs` handle execution
-- **`Ebml.fs`**: hand-rolled WebM/Matroska binary parser (VINT encoding, element ID scanning) with `[<TailCall>]` recursive descent
+This codebase follows strict functional programming principles — all changes must preserve them. Use **Railway Oriented Programming**: propagate errors via `Result<'T, AppError>` and `taskResult`/`result` computation expressions; never throw exceptions for domain errors. Maintain the **Functional Core, Imperative Shell** separation: pure modules (Domain, Commands, ProbeParse, Ebml, ModeConfig) must contain zero side effects; I/O belongs exclusively in Shell, Process, Verify, Display, and Cli. Apply **Parse, Don't Validate**: use branded types with private constructors and smart constructors to make illegal states unrepresentable; use discriminated unions for closed sets. Keep **immutability by default**: no `mutable` in pure modules; mutation is acceptable only at I/O boundaries or for performance-critical low-level code. Write **total functions**: return `Result`, `Option`, or `ValueOption` — never throw for expected failures; use active patterns for safe parsing. Prefer **composition over inheritance**: pipeline operators, `map`/`bind`/`fold`, and computation expressions — no classes, no inheritance hierarchies. Use **value types for performance** where appropriate: `[<Struct>]` DUs and records, `voption` for optional fields, struct tuples for multi-value returns.
 
 ### Output structure
 

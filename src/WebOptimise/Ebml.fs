@@ -6,16 +6,34 @@ open System
 [<RequireQualifiedAccess>]
 module Ebml =
 
-    let private cuesElementId = ReadOnlyMemory([| 0x1Cuy; 0x53uy; 0xBBuy; 0x6Buy |])
-    let private clusterElementId = ReadOnlyMemory([| 0x1Fuy; 0x43uy; 0xB6uy; 0x75uy |])
+    let cuesElementId =
+        ReadOnlyMemory(
+            [|
+                0x1Cuy
+                0x53uy
+                0xBBuy
+                0x6Buy
+            |]
+        )
 
-    let private vintWidth (firstByte: byte) : int =
+    let clusterElementId =
+        ReadOnlyMemory(
+            [|
+                0x1Fuy
+                0x43uy
+                0xB6uy
+                0x75uy
+            |]
+        )
+
+    let vintWidth (firstByte: byte) : int =
         if firstByte = 0uy then
             0
         else
-            9 - (int (System.Numerics.BitOperations.Log2(uint firstByte)) + 1)
+            9
+            - (int (System.Numerics.BitOperations.Log2(uint firstByte)) + 1)
 
-    let private readElementId (data: ReadOnlySpan<byte>) (pos: int) : struct (ReadOnlyMemory<byte> * int) voption =
+    let readElementId (data: ReadOnlySpan<byte>) (pos: int) : struct (ReadOnlyMemory<byte> * int) voption =
         if pos >= data.Length then
             ValueNone
         else
@@ -27,7 +45,7 @@ module Ebml =
                 let slice = data.Slice(pos, width).ToArray()
                 ValueSome(struct (ReadOnlyMemory slice, pos + width))
 
-    let private readElementSize (data: ReadOnlySpan<byte>) (pos: int) : struct (int * int) voption =
+    let readElementSize (data: ReadOnlySpan<byte>) (pos: int) : struct (int * int) voption =
         if pos >= data.Length then
             ValueNone
         else
@@ -45,9 +63,9 @@ module Ebml =
                 let masked = value &&& (mask >>> width)
                 ValueSome(struct (int masked, pos + width))
 
-    let private spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) = a.Span.SequenceEqual(b.Span)
+    let spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) = a.Span.SequenceEqual(b.Span)
 
-    let private skipEbmlHeader (data: ReadOnlySpan<byte>) : Result<int, string> =
+    let skipEbmlHeader (data: ReadOnlySpan<byte>) : Result<int, string> =
         match readElementId data 0 with
         | ValueNone -> Error "Could not parse EBML header"
         | ValueSome(struct (_, pos1)) ->
@@ -56,7 +74,7 @@ module Ebml =
             | ValueNone -> Error "Could not parse EBML header"
             | ValueSome(struct (size, pos2)) -> Ok(pos2 + size)
 
-    let private enterSegment (data: ReadOnlySpan<byte>) (pos: int) : Result<int, string> =
+    let enterSegment (data: ReadOnlySpan<byte>) (pos: int) : Result<int, string> =
         match readElementId data pos with
         | ValueNone -> Error "Could not parse Segment element"
         | ValueSome(struct (_, segEnd)) ->
@@ -66,7 +84,7 @@ module Ebml =
             | ValueSome(struct (_, dataStart)) -> Ok dataStart
 
     [<TailCall>]
-    let rec private scanForCues (data: ReadOnlySpan<byte>) (pos: int) : Result<unit, string> =
+    let rec scanForCues (data: ReadOnlySpan<byte>) (pos: int) : Result<unit, string> =
         if pos >= data.Length then
             Error "Could not locate Cues or Cluster element in file header"
         else

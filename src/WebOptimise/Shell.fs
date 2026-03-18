@@ -8,10 +8,11 @@ open CliWrap
 open CliWrap.Buffered
 
 [<Struct; NoComparison; NoEquality>]
-type BufferedOutput =
-    { ExitCode: int
-      StdOut: string
-      StdErr: string }
+type BufferedOutput = {
+    ExitCode: int
+    StdOut: string
+    StdErr: string
+}
 
 [<RequireQualifiedAccess>]
 module Shell =
@@ -27,10 +28,11 @@ module Shell =
                         .ExecuteBufferedAsync()
 
                 return
-                    Ok
-                        { ExitCode = r.ExitCode
-                          StdOut = r.StandardOutput
-                          StdErr = r.StandardError }
+                    Ok {
+                        ExitCode = r.ExitCode
+                        StdOut = r.StandardOutput
+                        StdErr = r.StandardError
+                    }
             with
             | :? ComponentModel.Win32Exception -> return Error $"%s{tool} not found in PATH"
             | ex -> return Error $"%s{tool} failed: %s{ex.Message}"
@@ -42,7 +44,8 @@ module Shell =
         (onStdOutLine: string -> unit)
         (stdErrBuilder: StringBuilder)
         (ct: CancellationToken)
-        : Task<Result<int, string>> =
+        : Task<Result<int, string>>
+        =
         task {
             try
                 let! r =

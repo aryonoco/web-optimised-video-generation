@@ -7,7 +7,13 @@ open System.Collections.Frozen
 module Constants =
 
     let supportedExtensions: FrozenSet<string> =
-        [ ".mp4"; ".m4v"; ".mov"; ".mkv" ].ToFrozenSet(StringComparer.OrdinalIgnoreCase)
+        [
+            ".mp4"
+            ".m4v"
+            ".mov"
+            ".mkv"
+        ]
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase)
 
     let mkvExtensions: FrozenSet<string> =
         [ ".mkv" ].ToFrozenSet(StringComparer.OrdinalIgnoreCase)

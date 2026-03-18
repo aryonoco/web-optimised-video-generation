@@ -11,17 +11,24 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>video;ffmpeg;web;optimise;remux;webm</PackageTags>
     <RepositoryUrl>https://github.com/aryonoco/web-optimised-video-generation</RepositoryUrl>
+    <ParallelCompilation>true</ParallelCompilation>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Constants.fs" />
     <Compile Include="Domain.fs" />
+    <Compile Include="Shell.fsi" />
     <Compile Include="Shell.fs" />
+    <Compile Include="ProbeParse.fsi" />
     <Compile Include="ProbeParse.fs" />
+    <Compile Include="Commands.fsi" />
     <Compile Include="Commands.fs" />
+    <Compile Include="Ebml.fsi" />
     <Compile Include="Ebml.fs" />
+    <Compile Include="Verify.fsi" />
     <Compile Include="Verify.fs" />
     <Compile Include="ModeConfig.fs" />
+    <Compile Include="Discovery.fsi" />
     <Compile Include="Discovery.fs" />
     <Compile Include="Process.fs" />
     <Compile Include="Display.fs" />

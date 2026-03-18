@@ -29,7 +29,8 @@ module Process =
         (config: ModeConfig)
         (onProgress: float -> unit)
         (ct: CancellationToken)
-        : Task<Result<EncodeResult, AppError>> =
+        : Task<Result<EncodeResult, AppError>>
+        =
         task {
             let createDirResult =
                 try
@@ -80,11 +81,12 @@ module Process =
                     let outputSize = System.IO.FileInfo(outputPath).Length
 
                     return
-                        Ok
-                            { InputPath = info.Path
-                              OutputPath = outputPath
-                              InputSize = info.SizeBytes
-                              OutputSize = outputSize }
+                        Ok {
+                            InputPath = info.Path
+                            OutputPath = outputPath
+                            InputSize = info.SizeBytes
+                            OutputSize = outputSize
+                        }
         }
 
     let processFile
@@ -94,7 +96,8 @@ module Process =
         (overwrite: bool)
         (onProgress: float -> unit)
         (ct: CancellationToken)
-        : Task<Result<EncodeResult, AppError>> =
+        : Task<Result<EncodeResult, AppError>>
+        =
         task {
             let config = ModeConfig.forMode mode
 
@@ -107,11 +110,12 @@ module Process =
                 let outputSize = System.IO.FileInfo(existingPath).Length
 
                 return
-                    Ok
-                        { InputPath = info.Path
-                          OutputPath = existingPath
-                          InputSize = info.SizeBytes
-                          OutputSize = outputSize }
+                    Ok {
+                        InputPath = info.Path
+                        OutputPath = existingPath
+                        InputSize = info.SizeBytes
+                        OutputSize = outputSize
+                    }
             | Some existingPath, true ->
                 File.Delete existingPath
                 return! runEncode info outputDir config onProgress ct

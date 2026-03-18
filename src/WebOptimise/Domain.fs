@@ -1,5 +1,6 @@
 namespace WebOptimise
 
+open System
 open System.IO
 open System.Text.Json
 
@@ -14,7 +15,7 @@ module NullSafe =
 // Branded types
 
 [<Struct>]
-type MediaFilePath = private MediaFilePath of string
+type MediaFilePath = private | MediaFilePath of string
 
 [<RequireQualifiedAccess>]
 module MediaFilePath =
@@ -37,7 +38,7 @@ module MediaFilePath =
         Path.GetDirectoryName p |> NullSafe.path
 
 [<Struct>]
-type OutputExtension = private OutputExtension of string
+type OutputExtension = private | OutputExtension of string
 
 [<RequireQualifiedAccess>]
 module OutputExtension =
@@ -73,40 +74,127 @@ type Mode =
     | Encode
     | Webm
 
+[<Struct; RequireQualifiedAccess>]
+type VideoCodec =
+    | H264
+    | H265
+    | AV1
+    | VP9
+    | VP8
+    | Other of videoCodecName: string
+
+[<RequireQualifiedAccess>]
+module VideoCodec =
+
+    let ofString =
+        function
+        | "h264" -> VideoCodec.H264
+        | "hevc"
+        | "h265" -> VideoCodec.H265
+        | "av1" -> VideoCodec.AV1
+        | "vp9" -> VideoCodec.VP9
+        | "vp8" -> VideoCodec.VP8
+        | other -> VideoCodec.Other other
+
+    let displayName =
+        function
+        | VideoCodec.H264 -> "H.264"
+        | VideoCodec.H265 -> "H.265"
+        | VideoCodec.AV1 -> "AV1"
+        | VideoCodec.VP9 -> "VP9"
+        | VideoCodec.VP8 -> "VP8"
+        | VideoCodec.Other n -> n
+
+[<Struct; RequireQualifiedAccess>]
+type AudioCodec =
+    | AAC
+    | Opus
+    | Other of audioCodecName: string
+
+[<RequireQualifiedAccess>]
+module AudioCodec =
+
+    let ofString =
+        function
+        | "aac" -> AudioCodec.AAC
+        | "opus" -> AudioCodec.Opus
+        | other -> AudioCodec.Other other
+
+    let displayName =
+        function
+        | AudioCodec.AAC -> "AAC"
+        | AudioCodec.Opus -> "Opus"
+        | AudioCodec.Other n -> n
+
+[<Struct; RequireQualifiedAccess>]
+type VideoProfile =
+    | High
+    | Main
+    | Baseline
+    | Other of videoProfileName: string
+
+[<RequireQualifiedAccess>]
+module VideoProfile =
+
+    let ofString (s: string) =
+        if s.Contains("High", StringComparison.Ordinal) then
+            VideoProfile.High
+        elif s.Contains("Main", StringComparison.Ordinal) then
+            VideoProfile.Main
+        elif s.Contains("Baseline", StringComparison.Ordinal) then
+            VideoProfile.Baseline
+        else
+            VideoProfile.Other s
+
+    let displayName =
+        function
+        | VideoProfile.High -> "High"
+        | VideoProfile.Main -> "Main"
+        | VideoProfile.Baseline -> "Baseline"
+        | VideoProfile.Other n -> n
+
 // Domain records
 
 [<NoComparison; NoEquality>]
-type VideoStream =
-    { Codec: string
-      Profile: string
-      Width: int
-      Height: int
-      FrameRate: float
-      Bitrate: int64 voption }
+type VideoStream = {
+    Codec: VideoCodec
+    Profile: VideoProfile voption
+    Width: int
+    Height: int
+    FrameRate: float
+    Bitrate: int64 voption
+}
 
 [<NoComparison; NoEquality>]
-type AudioStream =
-    { Codec: string
-      Channels: int
-      SampleRate: int
-      Bitrate: int64 voption }
+type AudioStream = {
+    Codec: AudioCodec
+    Channels: int voption
+    SampleRate: int voption
+    Bitrate: int64 voption
+}
 
 [<NoComparison; NoEquality>]
-type MediaFileInfo =
-    { Path: MediaFilePath
-      DurationSecs: float
-      SizeBytes: int64
-      Video: VideoStream
-      Audio: AudioStream voption }
+type MediaFileInfo = {
+    Path: MediaFilePath
+    DurationSecs: float
+    SizeBytes: int64
+    Video: VideoStream
+    Audio: AudioStream voption
+}
 
 [<NoComparison; NoEquality>]
-type EncodeResult =
-    { InputPath: MediaFilePath
-      OutputPath: string
-      InputSize: int64
-      OutputSize: int64 }
+type EncodeResult = {
+    InputPath: MediaFilePath
+    OutputPath: string
+    InputSize: int64
+    OutputSize: int64
+}
 
-type ProcessResult = EncodeResult * Mode
+[<NoComparison; NoEquality>]
+type ProcessResult = {
+    Result: EncodeResult
+    Mode: Mode
+}
 
 // Module functions for computed properties
 
@@ -114,11 +202,16 @@ type ProcessResult = EncodeResult * Mode
 module VideoStream =
 
     let resolutionLabel (s: VideoStream) =
-        if s.Width >= Constants.Width4K then "4K"
-        elif s.Width >= Constants.Width1440p then "1440p"
-        elif s.Width >= Constants.Width1080p then "1080p"
-        elif s.Width >= Constants.Width720p then "720p"
-        else $"%d{s.Width}x%d{s.Height}"
+        if s.Width >= Constants.Width4K then
+            "4K"
+        elif s.Width >= Constants.Width1440p then
+            "1440p"
+        elif s.Width >= Constants.Width1080p then
+            "1080p"
+        elif s.Width >= Constants.Width720p then
+            "720p"
+        else
+            $"%d{s.Width}x%d{s.Height}"
 
     let bitrateKbps (s: VideoStream) =
         match s.Bitrate with
@@ -150,7 +243,8 @@ module EncodeResult =
         if r.InputSize = 0L then
             0.0
         else
-            float (r.OutputSize - r.InputSize) / float r.InputSize * 100.0
+            float (r.OutputSize - r.InputSize) / float r.InputSize
+            * 100.0
 
     let savingsDisplay (r: EncodeResult) =
         let pct = savingsPct r
@@ -202,7 +296,11 @@ module Json =
     [<return: Struct>]
     let (|JInt|_|) (elem: JsonElement) =
         let mutable v = 0
-        if elem.TryGetInt32(&v) then ValueSome v else ValueNone
+
+        if elem.TryGetInt32(&v) then
+            ValueSome v
+        else
+            ValueNone
 
     [<return: Struct>]
     let (|Arr|_|) (elem: JsonElement) =
@@ -216,23 +314,13 @@ module Json =
 [<RequireQualifiedAccess>]
 module Parse =
 
-    let frameRate (fpsStr: string) : float =
+    let frameRate (fpsStr: string) : float voption =
         match fpsStr.Split('/') with
-        | [| Int n; Int d |] when d <> 0 -> float n / float d
-        | [| Float f |] -> f
-        | _ -> 0.0
+        | [| Int n; Int d |] when d <> 0 -> ValueSome(float n / float d)
+        | [| Float f |] -> ValueSome f
+        | _ -> ValueNone
 
     let safeInt64 =
         function
         | Some(Int64 v) -> ValueSome v
         | _ -> ValueNone
-
-    let safeInt =
-        function
-        | Some(Int v) -> v
-        | _ -> 0
-
-    let safeFloat =
-        function
-        | Some(Float v) -> v
-        | _ -> 0.0

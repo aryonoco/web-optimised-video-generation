@@ -62,6 +62,12 @@ module AppError =
         | AppError.ValidationError msg -> msg
         | AppError.IoError msg -> msg
 
+[<Struct; RequireQualifiedAccess>]
+type Mode =
+    | Remux
+    | Encode
+    | Webm
+
 // Domain records
 
 [<NoComparison; NoEquality>]

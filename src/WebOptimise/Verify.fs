@@ -111,12 +111,16 @@ module Verify =
                 |> List.truncate Constants.MaxKeyframeSample
                 |> List.map (fun (a, b) -> b - a)
 
-            let avgInterval = List.average intervals
+            match intervals with
+            | [] -> None
+            | _ ->
+                let avgInterval = List.average intervals
 
-            if avgInterval > Constants.MaxAcceptableKeyframeInterval then
-                Some $"Keyframe interval too large: %.1f{avgInterval}s (expected ~%d{Constants.KeyframeIntervalSecs}s)"
-            else
-                None
+                if avgInterval > Constants.MaxAcceptableKeyframeInterval then
+                    Some
+                        $"Keyframe interval too large: %.1f{avgInterval}s (expected ~%d{Constants.KeyframeIntervalSecs}s)"
+                else
+                    None
         else
             None
 

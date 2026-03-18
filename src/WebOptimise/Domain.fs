@@ -21,10 +21,10 @@ type MediaFilePath = private | MediaFilePath of string
 module MediaFilePath =
 
     let create (path: string) : Result<MediaFilePath, string> =
-        if File.Exists path then
-            Ok(MediaFilePath path)
+        if String.IsNullOrWhiteSpace path then
+            Error "File path must not be empty"
         else
-            Error $"File does not exist: %s{path}"
+            Ok(MediaFilePath path)
 
     let value (MediaFilePath p) = p
 

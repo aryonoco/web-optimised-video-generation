@@ -1,6 +1,5 @@
 namespace WebOptimise
 
-open System.Collections.Frozen
 open System.Threading.Tasks
 
 type CmdBuilder = MediaFileInfo -> string -> string list
@@ -20,42 +19,39 @@ type ModeConfig = {
 [<RequireQualifiedAccess>]
 module ModeConfig =
 
-    let private configs: FrozenDictionary<Mode, ModeConfig> =
-        (dict [
-            Mode.Remux,
-            {
-                CmdBuilder = Commands.buildRemuxCmd
-                Verifier = Verify.verifyRemuxed
-                OutputExt = OutputExtension.mp4
-                ErrorVerb = "Remuxing"
-                Label = "remux"
-                CompletionVerb = "optimised"
-            }
+    let private remuxConfig = {
+        CmdBuilder = Commands.buildRemuxCmd
+        Verifier = Verify.verifyRemuxed
+        OutputExt = OutputExtension.mp4
+        ErrorVerb = "Remuxing"
+        Label = "remux"
+        CompletionVerb = "optimised"
+    }
 
-            Mode.Encode,
-            {
-                CmdBuilder = Commands.buildEncodeCmd
-                Verifier = Verify.verifyEncoded
-                OutputExt = OutputExtension.mp4
-                ErrorVerb = "Encoding"
-                Label = "encode"
-                CompletionVerb = "encoded"
-            }
+    let private encodeConfig = {
+        CmdBuilder = Commands.buildEncodeCmd
+        Verifier = Verify.verifyEncoded
+        OutputExt = OutputExtension.mp4
+        ErrorVerb = "Encoding"
+        Label = "encode"
+        CompletionVerb = "encoded"
+    }
 
-            Mode.Webm,
-            {
-                CmdBuilder = Commands.buildWebmRemuxCmd
-                Verifier = Verify.verifyWebm
-                OutputExt = OutputExtension.webm
-                ErrorVerb = "WebM remuxing"
-                Label = "webm"
-                CompletionVerb = "optimised"
-            }
-        ])
-            .ToFrozenDictionary()
+    let private webmConfig = {
+        CmdBuilder = Commands.buildWebmRemuxCmd
+        Verifier = Verify.verifyWebm
+        OutputExt = OutputExtension.webm
+        ErrorVerb = "WebM remuxing"
+        Label = "webm"
+        CompletionVerb = "optimised"
+    }
 
-    let forMode (mode: Mode) = configs[mode]
+    let forMode (mode: Mode) =
+        match mode with
+        | Mode.Remux -> remuxConfig
+        | Mode.Encode -> encodeConfig
+        | Mode.Webm -> webmConfig
 
-    let label (mode: Mode) = configs[mode].Label
+    let label (mode: Mode) = (forMode mode).Label
 
-    let completionVerb (mode: Mode) = configs[mode].CompletionVerb
+    let completionVerb (mode: Mode) = (forMode mode).CompletionVerb

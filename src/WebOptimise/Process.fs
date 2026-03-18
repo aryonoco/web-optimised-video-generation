@@ -31,7 +31,7 @@ module Process =
         (onProgress: float -> unit)
         (ct: CancellationToken)
         : Task<Result<EncodeResult, AppError>> =
-        task {
+        taskResult {
             let createDirResult =
                 try
                     Directory.CreateDirectory outputDir |> ignore
@@ -39,60 +39,62 @@ module Process =
                 with ex ->
                     Error(AppError.IoError $"Cannot create output directory: %s{ex.Message}")
 
-            match createDirResult with
-            | Error e -> return Error e
-            | Ok() ->
+            do! createDirResult |> Task.FromResult
 
-                let outputPath =
-                    Path.Combine(outputDir, Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
+            let outputPath =
+                Path.Combine(outputDir, Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
 
-                let args = config.CmdBuilder info outputPath
-                let stdErrBuilder = StringBuilder()
+            let args = config.CmdBuilder info outputPath
+            let stdErrBuilder = StringBuilder()
 
-                let cmd =
-                    Cli
-                        .Wrap("ffmpeg")
-                        .WithArguments(args)
-                        .WithValidation(CommandResultValidation.None)
-                        .WithStandardOutputPipe(PipeTarget.ToDelegate(parseProgressLine onProgress info.DurationSecs))
-                        .WithStandardErrorPipe(PipeTarget.ToStringBuilder(stdErrBuilder))
+            let cmd =
+                Cli
+                    .Wrap("ffmpeg")
+                    .WithArguments(args)
+                    .WithValidation(CommandResultValidation.None)
+                    .WithStandardOutputPipe(PipeTarget.ToDelegate(parseProgressLine onProgress info.DurationSecs))
+                    .WithStandardErrorPipe(PipeTarget.ToStringBuilder(stdErrBuilder))
 
-                try
-                    let! result = cmd.ExecuteAsync(ct)
-
-                    if result.ExitCode <> 0 then
+            let! execResult =
+                task {
+                    try
+                        let! r = cmd.ExecuteAsync(ct)
+                        return Ok r
+                    with
+                    | :? OperationCanceledException ->
                         if File.Exists outputPath then
                             File.Delete outputPath
 
-                        let stderr = stdErrBuilder.ToString()
+                        return Error(AppError.IoError "Operation cancelled")
+                    | ex ->
+                        if File.Exists outputPath then
+                            File.Delete outputPath
 
-                        return
-                            Error(
-                                AppError.EncodeError(
-                                    $"%s{config.ErrorVerb} failed for %s{MediaFilePath.name info.Path}: exit code %d{result.ExitCode}\n%s{stderr}",
-                                    ValueSome("ffmpeg" :: args)
-                                )
-                            )
-                    else
-                        let outputSize = System.IO.FileInfo(outputPath).Length
+                        return Error(AppError.EncodeError($"Unexpected error: %s{ex.Message}", ValueNone))
+                }
 
-                        return
-                            Ok
-                                { InputPath = info.Path
-                                  OutputPath = outputPath
-                                  InputSize = info.SizeBytes
-                                  OutputSize = outputSize }
-                with
-                | :? OperationCanceledException ->
-                    if File.Exists outputPath then
-                        File.Delete outputPath
+            if execResult.ExitCode <> 0 then
+                if File.Exists outputPath then
+                    File.Delete outputPath
 
-                    return Error(AppError.IoError "Operation cancelled")
-                | ex ->
-                    if File.Exists outputPath then
-                        File.Delete outputPath
+                let stderr = stdErrBuilder.ToString()
 
-                    return Error(AppError.EncodeError($"Unexpected error: %s{ex.Message}", ValueNone))
+                return!
+                    Error(
+                        AppError.EncodeError(
+                            $"%s{config.ErrorVerb} failed for %s{MediaFilePath.name info.Path}: exit code %d{execResult.ExitCode}\n%s{stderr}",
+                            ValueSome("ffmpeg" :: args)
+                        )
+                    )
+            else
+
+                let outputSize = System.IO.FileInfo(outputPath).Length
+
+                return
+                    { InputPath = info.Path
+                      OutputPath = outputPath
+                      InputSize = info.SizeBytes
+                      OutputSize = outputSize }
         }
 
     let processFile

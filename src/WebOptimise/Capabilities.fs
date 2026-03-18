@@ -12,12 +12,12 @@ type Env = {
         string -> string list -> (string -> unit) -> StringBuilder -> CancellationToken -> Task<Result<int, ShellError>>
     RunExists: string -> Task<Result<unit, ShellError>>
     ResolveInputPath: string -> ResolvedPath
-    EnumerateFiles: string -> string list
-    CreateDirectory: string -> Result<unit, ShellError>
-    FileLength: string -> Result<int64, ShellError>
-    FileExists: string -> bool
-    DeleteFile: string -> Result<unit, ShellError>
-    ReadFileHeader: string -> int -> Result<byte array, ShellError>
+    EnumerateFiles: OutputDir -> string list
+    CreateDirectory: OutputDir -> Result<unit, ShellError>
+    FileLength: OutputPath -> Result<int64, ShellError>
+    FileExists: OutputPath -> bool
+    DeleteFile: OutputPath -> Result<unit, ShellError>
+    ReadFileHeader: OutputPath -> int -> Result<byte array, ShellError>
     ParseJson: string -> Result<JsonElement, string>
 }
 

@@ -16,8 +16,31 @@ module NullSafe =
 
 // Branded types
 
+[<Struct; RequireQualifiedAccess>]
+type ContainerFormat =
+    | Mp4
+    | M4v
+    | Mov
+    | Mkv
+
+[<RequireQualifiedAccess>]
+module ContainerFormat =
+
+    let ofExtension (ext: string) : ContainerFormat voption =
+        match ext.ToLowerInvariant() with
+        | ".mp4" -> ValueSome ContainerFormat.Mp4
+        | ".m4v" -> ValueSome ContainerFormat.M4v
+        | ".mov" -> ValueSome ContainerFormat.Mov
+        | ".mkv" -> ValueSome ContainerFormat.Mkv
+        | _ -> ValueNone
+
+    let isMkv =
+        function
+        | ContainerFormat.Mkv -> true
+        | _ -> false
+
 [<Struct>]
-type MediaFilePath = private | MediaFilePath of string
+type MediaFilePath = private | MediaFilePath of path: string * container: ContainerFormat
 
 [<RequireQualifiedAccess>]
 module MediaFilePath =
@@ -26,15 +49,19 @@ module MediaFilePath =
         if String.IsNullOrWhiteSpace path then
             Error "File path must not be empty"
         else
-            Ok(MediaFilePath path)
+            let ext = Path.GetExtension path |> NullSafe.path
 
-    let value (MediaFilePath p) = p
+            match ContainerFormat.ofExtension ext with
+            | ValueSome fmt -> Ok(MediaFilePath(path, fmt))
+            | ValueNone -> Error $"Unsupported file type: '%s{ext}'"
 
-    let name (MediaFilePath p) = Path.GetFileName p |> NullSafe.path
+    let value (MediaFilePath(p, _)) = p
 
-    let extension (MediaFilePath p) = Path.GetExtension p |> NullSafe.path
+    let container (MediaFilePath(_, c)) = c
 
-    let directory (MediaFilePath p) =
+    let name (MediaFilePath(p, _)) = Path.GetFileName p |> NullSafe.path
+
+    let directory (MediaFilePath(p, _)) =
         Path.GetDirectoryName p |> NullSafe.path
 
 [<Struct>]
@@ -109,9 +136,11 @@ module NonEmpty =
             let! results = (h :: t) |> List.traverseTaskResultA f
 
             return
-                results
-                |> Result.map (fun xs -> NonEmpty(List.head xs, List.tail xs))
-                |> Result.mapError (fun es -> NonEmpty(List.head es, List.tail es))
+                match results with
+                | Ok(x :: xs) -> Ok(NonEmpty(x, xs))
+                | Error(e :: es) -> Error(NonEmpty(e, es))
+                | Ok []
+                | Error [] -> invalidOp "traverseTaskResultA: non-empty input produced empty output"
         }
 
 [<Struct>]
@@ -138,9 +167,21 @@ module OutputPath =
 
     let fileName (OutputPath p) = Path.GetFileName p |> NullSafe.path
 
+[<Struct>]
+type OutputDir = private | OutputDir of string
+
+[<RequireQualifiedAccess>]
+module OutputDir =
+
+    let forFile (path: MediaFilePath) : OutputDir =
+        OutputDir(Path.Combine(MediaFilePath.directory path, Constants.OutputDirName))
+
+    let value (OutputDir d) = d
+
 [<RequireQualifiedAccess>]
 type ResolvedPath =
-    | File of fullPath: string * ext: string
+    | File of fullPath: string * container: ContainerFormat
+    | UnsupportedFile of fullPath: string * ext: string
     | Directory of fullPath: string * files: string list
     | NotFound of originalPath: string
 

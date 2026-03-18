@@ -68,7 +68,7 @@ module Display =
         let warnings =
             infos
             |> List.collect (fun info ->
-                if Constants.mkvExtensions.Contains(MediaFilePath.extension info.Path) then
+                if ContainerFormat.isMkv (MediaFilePath.container info.Path) then
                     []
                 else
                     let name = MediaFilePath.name info.Path

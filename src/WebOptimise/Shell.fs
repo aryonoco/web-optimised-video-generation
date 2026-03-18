@@ -76,7 +76,11 @@ module Shell =
         let resolved = System.IO.Path.GetFullPath path
 
         if System.IO.File.Exists resolved then
-            ResolvedPath.File(resolved, System.IO.Path.GetExtension resolved |> NullSafe.path)
+            let ext = System.IO.Path.GetExtension resolved |> NullSafe.path
+
+            match ContainerFormat.ofExtension ext with
+            | ValueSome container -> ResolvedPath.File(resolved, container)
+            | ValueNone -> ResolvedPath.UnsupportedFile(resolved, ext)
         elif System.IO.Directory.Exists resolved then
             let files =
                 System.IO.Directory.EnumerateFiles resolved |> Seq.toList
@@ -85,37 +89,42 @@ module Shell =
         else
             ResolvedPath.NotFound path
 
-    let enumerateFiles (dir: string) : string list =
-        if System.IO.Directory.Exists dir then
-            System.IO.Directory.EnumerateFiles dir |> Seq.toList
+    let enumerateFiles (dir: OutputDir) : string list =
+        let d = OutputDir.value dir
+
+        if System.IO.Directory.Exists d then
+            System.IO.Directory.EnumerateFiles d |> Seq.toList
         else
             []
 
-    let createDirectory (dir: string) : Result<unit, ShellError> =
+    let createDirectory (dir: OutputDir) : Result<unit, ShellError> =
         try
-            System.IO.Directory.CreateDirectory dir |> ignore
+            System.IO.Directory.CreateDirectory(OutputDir.value dir)
+            |> ignore
+
             Ok()
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))
 
-    let fileLength (path: string) : Result<int64, ShellError> =
+    let fileLength (path: OutputPath) : Result<int64, ShellError> =
         try
-            Ok(System.IO.FileInfo(path).Length)
+            Ok(System.IO.FileInfo(OutputPath.value path).Length)
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))
 
-    let fileExists (path: string) : bool = System.IO.File.Exists path
+    let fileExists (path: OutputPath) : bool =
+        System.IO.File.Exists(OutputPath.value path)
 
-    let deleteFile (path: string) : Result<unit, ShellError> =
+    let deleteFile (path: OutputPath) : Result<unit, ShellError> =
         try
-            System.IO.File.Delete path
+            System.IO.File.Delete(OutputPath.value path)
             Ok()
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))
 
-    let readFileHeader (path: string) (maxBytes: int) : Result<byte array, ShellError> =
+    let readFileHeader (path: OutputPath) (maxBytes: int) : Result<byte array, ShellError> =
         try
-            use fs = System.IO.File.OpenRead(path)
+            use fs = System.IO.File.OpenRead(OutputPath.value path)
             let buf = Array.zeroCreate (min (int fs.Length) maxBytes)
             let bytesRead = fs.Read(buf, 0, buf.Length)
 

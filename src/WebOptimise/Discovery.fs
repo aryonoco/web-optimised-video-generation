@@ -13,11 +13,6 @@ module Discovery =
     let naturalComparer =
         StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering)
 
-    let isSupported (ext: string) =
-        Constants.supportedExtensions.Contains ext
-
-    let isMkv (ext: string) = Constants.mkvExtensions.Contains ext
-
     let slugify (name: string) =
         let stem =
             Path.GetFileNameWithoutExtension name |> NullSafe.path
@@ -33,22 +28,26 @@ module Discovery =
     let sanitiseFilename (guid: Guid) (name: string) (ext: OutputExtension) : string =
         $"%O{guid}_%s{slugify name}%s{OutputExtension.value ext}"
 
-    let matchExistingOutput (files: string list) (originalName: string) (ext: OutputExtension) : string voption =
+    let matchExistingOutput (files: string list) (originalName: string) (ext: OutputExtension) : OutputPath voption =
         let suffix =
             $"_%s{slugify originalName}%s{OutputExtension.value ext}"
 
         files
         |> List.tryFind (fun f -> (Path.GetFileName(f) |> NullSafe.path).EndsWith(suffix, StringComparison.Ordinal))
+        |> Option.bind (fun f ->
+            match OutputPath.ofFullPath f with
+            | Ok op -> Some op
+            | Error _ -> None
+        )
         |> ValueOption.ofOption
 
     let effectiveMode (info: MediaFileInfo) (userMode: Mode) : Mode =
-        if isMkv (MediaFilePath.extension info.Path) then
+        if ContainerFormat.isMkv (MediaFilePath.container info.Path) then
             Mode.Webm
         else
             userMode
 
-    let outputDir (info: MediaFileInfo) : string =
-        Path.Combine(MediaFilePath.directory info.Path, Constants.OutputDirName)
+    let outputDir (info: MediaFileInfo) : OutputDir = OutputDir.forFile info.Path
 
     let collectFiles (resolved: ResolvedPath list) : Result<NonEmpty<MediaFilePath>, AppError> =
         let addIfNew (found, seen) full =
@@ -59,16 +58,15 @@ module Discovery =
 
         let processPath (found, seen) =
             function
-            | ResolvedPath.File(fullPath, ext) ->
-                if not (isSupported ext) then
-                    Error(AppError.Validation(ValidationFailure.UnsupportedExtension(ext, fullPath)))
-                else
-                    Ok(addIfNew (found, seen) fullPath)
+            | ResolvedPath.File(fullPath, _) -> Ok(addIfNew (found, seen) fullPath)
+            | ResolvedPath.UnsupportedFile(fullPath, ext) ->
+                Error(AppError.Validation(ValidationFailure.UnsupportedExtension(ext, fullPath)))
             | ResolvedPath.Directory(_, files) ->
                 let filtered =
                     files
                     |> List.filter (fun f ->
-                        isSupported (Path.GetExtension f |> NullSafe.path)
+                        ContainerFormat.ofExtension (Path.GetExtension f |> NullSafe.path)
+                        |> ValueOption.isSome
                         && (Path.GetDirectoryName f
                             |> NullSafe.path
                             |> Path.GetFileName
@@ -106,7 +104,7 @@ module Discovery =
         | Mode.Encode ->
             let mkvFiles =
                 files
-                |> List.filter (fun f -> isMkv (MediaFilePath.extension f))
+                |> List.filter (fun f -> ContainerFormat.isMkv (MediaFilePath.container f))
 
             if mkvFiles.IsEmpty then
                 Ok()
@@ -123,7 +121,7 @@ module Discovery =
         let violations =
             infos
             |> List.collect (fun info ->
-                if not (isMkv (MediaFilePath.extension info.Path)) then
+                if not (ContainerFormat.isMkv (MediaFilePath.container info.Path)) then
                     []
                 else
                     let name = MediaFilePath.name info.Path

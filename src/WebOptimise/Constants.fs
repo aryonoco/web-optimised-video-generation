@@ -1,22 +1,9 @@
 namespace WebOptimise
 
 open System
-open System.Collections.Frozen
 
 [<RequireQualifiedAccess>]
 module Constants =
-
-    let supportedExtensions: FrozenSet<string> =
-        [
-            ".mp4"
-            ".m4v"
-            ".mov"
-            ".mkv"
-        ]
-            .ToFrozenSet(StringComparer.OrdinalIgnoreCase)
-
-    let mkvExtensions: FrozenSet<string> =
-        [ ".mkv" ].ToFrozenSet(StringComparer.OrdinalIgnoreCase)
 
     [<Literal>]
     let OutputDirName = "web-optimised"

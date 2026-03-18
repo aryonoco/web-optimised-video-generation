@@ -48,13 +48,13 @@ module Process =
         | Ok _ -> Ok()
 
     let private tryCleanup (env: Env) (path: OutputPath) : unit =
-        if env.FileExists(OutputPath.value path) then
-            env.DeleteFile(OutputPath.value path) |> ignore
+        if env.FileExists path then
+            env.DeleteFile path |> ignore
 
     let private runEncode
         (env: Env)
         (info: MediaFileInfo)
-        (outputDir: string)
+        (outputDir: OutputDir)
         (config: ModeConfig)
         (onProgress: ProgressReporter)
         (ct: CancellationToken)
@@ -65,14 +65,18 @@ module Process =
                 do!
                     env.CreateDirectory outputDir
                     |> Result.mapError (fun e ->
-                        AppError.Process(ProcessFailure.OutputDirFailed(outputDir, ShellError.format e))
+                        AppError.Process(
+                            ProcessFailure.OutputDirFailed(OutputDir.value outputDir, ShellError.format e)
+                        )
                     )
 
                 return!
                     OutputPath.create
-                        outputDir
+                        (OutputDir.value outputDir)
                         (Discovery.sanitiseFilename (Guid.NewGuid()) (MediaFilePath.name info.Path) config.OutputExt)
-                    |> Result.mapError (fun msg -> AppError.Process(ProcessFailure.OutputDirFailed(outputDir, msg)))
+                    |> Result.mapError (fun msg ->
+                        AppError.Process(ProcessFailure.OutputDirFailed(OutputDir.value outputDir, msg))
+                    )
             }
 
         match setupResult with
@@ -92,7 +96,7 @@ module Process =
                         do! interpretExitCode info config.ErrorVerb args stdErrBuilder shellResult
 
                         let! outputSize =
-                            env.FileLength(OutputPath.value outputPath)
+                            env.FileLength outputPath
                             |> Result.mapError (fun e -> AppError.Process(ProcessFailure.ShellFailed e))
 
                         return {
@@ -113,7 +117,7 @@ module Process =
     let processFile
         (env: Env)
         (info: MediaFileInfo)
-        (outputDir: string)
+        (outputDir: OutputDir)
         (mode: Mode)
         (overwrite: bool)
         (onProgress: ProgressReporter)
@@ -127,20 +131,14 @@ module Process =
             Discovery.matchExistingOutput existingFiles (MediaFilePath.name info.Path) config.OutputExt
 
         match existing, overwrite with
-        | ValueSome existingFullPath, false ->
+        | ValueSome existingPath, false ->
             onProgress info.DurationSecs
 
             let skipResult =
                 result {
                     let! outputSize =
-                        env.FileLength existingFullPath
+                        env.FileLength existingPath
                         |> Result.mapError (fun e -> AppError.Process(ProcessFailure.ShellFailed e))
-
-                    let! existingPath =
-                        OutputPath.ofFullPath existingFullPath
-                        |> Result.mapError (fun msg ->
-                            AppError.Process(ProcessFailure.OutputDirFailed(existingFullPath, msg))
-                        )
 
                     return {
                         InputPath = info.Path
@@ -151,9 +149,9 @@ module Process =
                 }
 
             Task.FromResult skipResult
-        | ValueSome existingFullPath, true ->
+        | ValueSome existingPath, true ->
             task {
-                match env.DeleteFile existingFullPath with
+                match env.DeleteFile existingPath with
                 | Error e -> return Error(AppError.Process(ProcessFailure.ShellFailed e))
                 | Ok() -> return! runEncode env info outputDir config onProgress ct
             }

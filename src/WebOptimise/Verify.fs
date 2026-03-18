@@ -91,7 +91,7 @@ module Verify =
 
     // I/O functions delegating to pure validators
 
-    let checkVideoProfile (env: Env) (path: string) : Task<Result<unit, VerificationIssue list>> =
+    let checkVideoProfile (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
         task {
             match!
                 env.RunBuffered "ffprobe" [
@@ -100,7 +100,7 @@ module Verify =
                     "-print_format"
                     "json"
                     "-show_streams"
-                    path
+                    OutputPath.value path
                 ]
             with
             | Error e -> return Error [ VerificationIssue.CheckFailed(ShellError.format e) ]
@@ -110,13 +110,13 @@ module Verify =
                 | Ok root -> return validateVideoProfile root |> Result.mapError List.singleton
         }
 
-    let checkFaststart (env: Env) (path: string) : Task<Result<unit, VerificationIssue list>> =
+    let checkFaststart (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
         task {
             match!
                 env.RunBuffered "ffprobe" [
                     "-v"
                     "trace"
-                    path
+                    OutputPath.value path
                 ]
             with
             | Error e -> return Error [ VerificationIssue.CheckFailed(ShellError.format e) ]
@@ -126,7 +126,7 @@ module Verify =
                     |> Result.mapError List.singleton
         }
 
-    let checkKeyframeIntervals (env: Env) (path: string) : Task<Result<unit, VerificationIssue list>> =
+    let checkKeyframeIntervals (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
         task {
             match!
                 env.RunBuffered "ffprobe" [
@@ -138,7 +138,7 @@ module Verify =
                     "packet=pts_time,flags"
                     "-of"
                     "csv=p=0"
-                    path
+                    OutputPath.value path
                 ]
             with
             | Error e -> return Error [ VerificationIssue.CheckFailed(ShellError.format e) ]
@@ -148,7 +148,7 @@ module Verify =
                     |> Result.mapError List.singleton
         }
 
-    let checkCuesFront (env: Env) (path: string) : Task<Result<unit, VerificationIssue list>> =
+    let checkCuesFront (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
         match env.ReadFileHeader path Constants.HeaderScanSize with
         | Error e -> Task.FromResult(Error [ VerificationIssue.FileReadFailed(ShellError.format e) ])
         | Ok buf ->
@@ -161,27 +161,21 @@ module Verify =
     // Composite verifiers
 
     let verifyEncoded (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
-        let p = OutputPath.value path
-
         taskValidation {
-            let! _ = checkVideoProfile env p
-            and! _ = checkFaststart env p
-            and! _ = checkKeyframeIntervals env p
+            let! _ = checkVideoProfile env path
+            and! _ = checkFaststart env path
+            and! _ = checkKeyframeIntervals env path
             return ()
         }
 
     let verifyRemuxed (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
-        let p = OutputPath.value path
-
         taskValidation {
-            let! _ = checkFaststart env p
+            let! _ = checkFaststart env path
             return ()
         }
 
     let verifyWebm (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
-        let p = OutputPath.value path
-
         taskValidation {
-            let! _ = checkCuesFront env p
+            let! _ = checkCuesFront env path
             return ()
         }

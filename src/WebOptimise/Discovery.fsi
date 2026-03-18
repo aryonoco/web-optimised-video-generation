@@ -9,11 +9,11 @@ module Discovery =
 
     val sanitiseFilename: guid: Guid -> name: string -> ext: OutputExtension -> string
 
-    val matchExistingOutput: files: string list -> originalName: string -> ext: OutputExtension -> string voption
+    val matchExistingOutput: files: string list -> originalName: string -> ext: OutputExtension -> OutputPath voption
 
     val effectiveMode: info: MediaFileInfo -> userMode: Mode -> Mode
 
-    val outputDir: info: MediaFileInfo -> string
+    val outputDir: info: MediaFileInfo -> OutputDir
 
     val collectFiles: resolved: ResolvedPath list -> Result<NonEmpty<MediaFilePath>, AppError>
 

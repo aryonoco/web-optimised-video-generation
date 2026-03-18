@@ -29,11 +29,11 @@ module Shell =
 
     val resolveInputPath: path: string -> ResolvedPath
 
-    val enumerateFiles: dir: string -> string list
+    val enumerateFiles: dir: OutputDir -> string list
 
-    val createDirectory: dir: string -> Result<unit, ShellError>
-    val fileLength: path: string -> Result<int64, ShellError>
-    val fileExists: path: string -> bool
-    val deleteFile: path: string -> Result<unit, ShellError>
-    val readFileHeader: path: string -> maxBytes: int -> Result<byte array, ShellError>
+    val createDirectory: dir: OutputDir -> Result<unit, ShellError>
+    val fileLength: path: OutputPath -> Result<int64, ShellError>
+    val fileExists: path: OutputPath -> bool
+    val deleteFile: path: OutputPath -> Result<unit, ShellError>
+    val readFileHeader: path: OutputPath -> maxBytes: int -> Result<byte array, ShellError>
     val parseJson: json: string -> Result<JsonElement, string>

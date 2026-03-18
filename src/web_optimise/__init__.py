@@ -2,12 +2,12 @@
 
 from web_optimise._cli import main
 from web_optimise._cli import parse_args
-from web_optimise._cli import print_summary
 from web_optimise._commands import build_ffmpeg_cmd
 from web_optimise._commands import build_remux_cmd
 from web_optimise._commands import build_webm_remux_cmd
 from web_optimise._constants import Mode
 from web_optimise._discovery import find_files
+from web_optimise._display import print_summary
 from web_optimise._modes import MODE_CONFIGS
 from web_optimise._modes import ModeConfig
 from web_optimise._probe import probe_file

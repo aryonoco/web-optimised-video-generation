@@ -11,7 +11,7 @@ SUPPORTED_EXTENSIONS: Final[frozenset[str]] = frozenset({".mp4", ".m4v", ".mov",
 OUTPUT_DIR_NAME: Final[str] = "web-optimised"
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  PROCESSING MODES (discriminated union)
+#  PROCESSING MODES
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -33,7 +33,6 @@ CRF: Final[int] = 25
 PRESET: Final[str] = "slower"
 PROFILE: Final[str] = "high"
 LEVEL: Final[str] = "4.0"
-TARGET_FPS: Final[int] = 16
 KEYFRAME_INTERVAL_SECS: Final[int] = 2
 B_FRAMES: Final[int] = 3
 X264_PARAMS: Final[str] = "deblock=-1,-1"
@@ -54,7 +53,6 @@ WIDTH_720P: Final[int] = 1280
 MIN_KEYFRAMES_FOR_CHECK: Final[int] = 2
 MAX_KEYFRAME_SAMPLE: Final[int] = 10
 MAX_ACCEPTABLE_KEYFRAME_INTERVAL: Final[float] = 3.0
-MAX_WEB_FRAME_RATE: Final[int] = 30
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  EBML ELEMENT IDs (WebM verification)

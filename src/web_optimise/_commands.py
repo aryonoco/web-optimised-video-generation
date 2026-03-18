@@ -8,31 +8,33 @@ from web_optimise._constants import KEYFRAME_INTERVAL_SECS
 from web_optimise._constants import LEVEL
 from web_optimise._constants import PRESET
 from web_optimise._constants import PROFILE
-from web_optimise._constants import TARGET_FPS
 from web_optimise._constants import X264_PARAMS
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from web_optimise._types import FileInfo
+
 
 def build_ffmpeg_cmd(
-    input_path: Path,
+    info: FileInfo,
     output_path: Path,
     /,
 ) -> tuple[str, ...]:
     """
     Build the ffmpeg command for web-optimised encoding.
 
-    Produce H.264 High profile, 2-second keyframes, CFR 16fps,
+    Produce H.264 High profile, 2-second keyframes,
     stream-copied audio, faststart, stripped metadata.
     """
-    gop_size = TARGET_FPS * KEYFRAME_INTERVAL_SECS
+    fps = max(round(info.video.frame_rate), 1)
+    gop_size = fps * KEYFRAME_INTERVAL_SECS
     return (
         "ffmpeg",
         "-hide_banner",
         "-y",
         "-i",
-        str(input_path),
+        str(info.path),
         # Video encoding
         "-c:v",
         "libx264",
@@ -46,16 +48,11 @@ def build_ffmpeg_cmd(
         LEVEL,
         "-pix_fmt",
         "yuv420p",
-        # Frame rate: convert VFR to CFR
-        "-r",
-        str(TARGET_FPS),
-        "-fps_mode",
-        "cfr",
         # GOP structure
         "-g",
         str(gop_size),
         "-keyint_min",
-        str(TARGET_FPS),
+        str(fps),
         "-bf",
         str(B_FRAMES),
         # x264 tuning
@@ -82,7 +79,7 @@ def build_ffmpeg_cmd(
 
 
 def build_remux_cmd(
-    input_path: Path,
+    info: FileInfo,
     output_path: Path,
     /,
 ) -> tuple[str, ...]:
@@ -97,7 +94,7 @@ def build_remux_cmd(
         "-hide_banner",
         "-y",
         "-i",
-        str(input_path),
+        str(info.path),
         # Stream copy (no re-encoding)
         "-c:v",
         "copy",
@@ -123,7 +120,7 @@ def build_remux_cmd(
 
 
 def build_webm_remux_cmd(
-    input_path: Path,
+    info: FileInfo,
     output_path: Path,
     /,
 ) -> tuple[str, ...]:
@@ -139,7 +136,7 @@ def build_webm_remux_cmd(
         "-hide_banner",
         "-y",
         "-i",
-        str(input_path),
+        str(info.path),
         # Stream copy (no re-encoding)
         "-c:v",
         "copy",

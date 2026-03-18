@@ -20,7 +20,7 @@ from web_optimise._constants import Mode
 #  TYPE ALIASES
 # ══════════════════════════════════════════════════════════════════════════════
 
-type CmdBuilder = Callable[[Path, Path], tuple[str, ...]]
+type CmdBuilder = Callable[[FileInfo, Path], tuple[str, ...]]
 type Verifier = Callable[[Path], tuple[bool, list[str]]]
 
 

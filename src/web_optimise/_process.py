@@ -72,7 +72,7 @@ def process_file(
         info.path.name,
         ext=config.output_ext,
     )
-    cmd = config.cmd_builder(info.path, output_path)
+    cmd = config.cmd_builder(info, output_path)
 
     proc = subprocess.Popen(  # noqa: S603
         cmd,

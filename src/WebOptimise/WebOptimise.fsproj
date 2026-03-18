@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>web-optimise</ToolCommandName>
+    <PackageId>WebOptimise</PackageId>
+    <Version>0.1.0</Version>
+    <Description>Optimise media files for progressive web delivery</Description>
+    <Authors>Aryan Ameri</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>video;ffmpeg;web;optimise;remux;webm</PackageTags>
+    <RepositoryUrl>https://github.com/aryonoco/web-optimised-video-generation</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Constants.fs" />
+    <Compile Include="Domain.fs" />
+    <Compile Include="ProbeJson.fs" />
+    <Compile Include="ProbeParse.fs" />
+    <Compile Include="Commands.fs" />
+    <Compile Include="Ebml.fs" />
+    <Compile Include="Verify.fs" />
+    <Compile Include="ModeConfig.fs" />
+    <Compile Include="Discovery.fs" />
+    <Compile Include="Process.fs" />
+    <Compile Include="Display.fs" />
+    <Compile Include="Cli.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Argu" />
+    <PackageReference Include="CliWrap" />
+    <PackageReference Include="FSharp.SystemTextJson" />
+    <PackageReference Include="FsToolkit.ErrorHandling" />
+    <PackageReference Include="Spectre.Console" />
+  </ItemGroup>
+
+</Project>

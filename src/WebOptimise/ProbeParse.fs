@@ -110,14 +110,8 @@ module ProbeParse =
             return struct (duration, size)
         }
 
-    let fromJson (path: MediaFilePath) (json: string) : Result<MediaFileInfo, AppError> =
+    let fromJson (path: MediaFilePath) (root: JsonElement) : Result<MediaFileInfo, AppError> =
         result {
-            let! root =
-                try
-                    Ok(JsonElement.Parse(json))
-                with ex ->
-                    Error(AppError.Probe(ProbeFailure.JsonParseFailed(ex.Message, path)))
-
             let! videoElem =
                 match findStream "video" root with
                 | ValueSome elem -> Ok elem

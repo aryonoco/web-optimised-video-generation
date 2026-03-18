@@ -117,7 +117,9 @@ module Cli =
                     return
                         Error(AppError.Probe(ProbeFailure.NonZeroExit(probeResult.ExitCode, probeResult.StdErr, path)))
                 else
-                    return ProbeParse.fromJson path probeResult.StdOut
+                    match Json.tryParse probeResult.StdOut with
+                    | Error msg -> return Error(AppError.Probe(ProbeFailure.JsonParseFailed(msg, path)))
+                    | Ok root -> return ProbeParse.fromJson path root
         }
 
     let private discover (env: Env) (input: ValidatedInput) : Task<Result<DiscoveredFiles, AppError>> =
@@ -156,10 +158,10 @@ module Cli =
                 |> List.map (fun i -> Discovery.effectiveMode i discovered.Input.Mode)
                 |> List.distinct
 
-            let infosNel =
+            let! infosNel =
                 match NonEmpty.ofList infos with
-                | ValueSome nel -> nel
-                | ValueNone -> NonEmpty.singleton (List.head infos)
+                | ValueSome nel -> Ok nel
+                | ValueNone -> Error(AppError.Validation ValidationFailure.NoSupportedFiles)
 
             return {
                 Input = discovered.Input
@@ -168,17 +170,32 @@ module Cli =
             }
         }
 
-    let private processOne
+    let private processAndVerifyOne
         (env: Env)
         (overwrite: bool)
+        (userMode: WebOptimise.Mode)
         (info: MediaFileInfo)
-        (fileMode: WebOptimise.Mode)
         (onProgress: ProgressReporter)
         (ct: CancellationToken)
-        : Task<Result<EncodeResult, AppError>>
+        : Task<Result<PipelineResult, AppError>>
         =
-        let outputDir = Discovery.outputDir info
-        Process.processFile env info outputDir fileMode overwrite onProgress ct
+        task {
+            let fileMode = Discovery.effectiveMode info userMode
+            let outputDir = Discovery.outputDir info
+
+            match! Process.processFile env info outputDir fileMode overwrite onProgress ct with
+            | Error e -> return Error e
+            | Ok encodeResult ->
+                let config = ModeConfig.forMode fileMode
+                let! verification = config.Verifier env encodeResult.OutputPath
+
+                return
+                    Ok {
+                        Encode = encodeResult
+                        Mode = fileMode
+                        Verification = verification
+                    }
+        }
 
     let private execute (env: Env) (pipeline: AnalysedPipeline) : Task<int> =
         task {
@@ -191,37 +208,26 @@ module Cli =
 
             let infos = NonEmpty.toList pipeline.Infos
 
-            let! progressResult =
-                Display.withProgress infos (processOne env pipeline.Input.Overwrite) pipeline.Input.Mode cts.Token
+            let! pipelineResult =
+                Display.withProgress
+                    infos
+                    (processAndVerifyOne env pipeline.Input.Overwrite pipeline.Input.Mode)
+                    cts.Token
 
-            match progressResult with
+            match pipelineResult with
             | Error e ->
                 Display.printError (AppError.format e)
                 return 1
-            | Ok resultsWithModes ->
-                let! verificationResults =
-                    resultsWithModes
-                    |> List.map (fun pr ->
-                        task {
-                            let config = ModeConfig.forMode pr.Mode
-                            let! vr = config.Verifier env pr.Result.OutputPath
-
-                            return {
-                                FileName = OutputPath.fileName pr.Result.OutputPath
-                                Outcome = vr
-                            }
-                        }
-                    )
-                    |> Task.WhenAll
-
-                let allOk =
-                    Display.displayVerification (Array.toList verificationResults)
+            | Ok results ->
+                let allOk = Display.displayVerification results
 
                 NL |> toConsole
-                Display.printSummary (resultsWithModes |> List.map _.Result)
+                Display.printSummary (results |> List.map _.Encode)
 
                 let verb =
-                    pipeline.Modes
+                    results
+                    |> List.map _.Mode
+                    |> List.distinct
                     |> List.map ModeConfig.completionVerb
                     |> List.distinct
                     |> function
@@ -229,8 +235,7 @@ module Cli =
                         | _ -> "processed"
 
                 if allOk then
-                    P $"Done! %d{resultsWithModes.Length} file(s) %s{verb}."
-                    |> toConsole
+                    P $"Done! %d{results.Length} file(s) %s{verb}." |> toConsole
                 else
                     E "Done with warnings. Check verification results above."
                     |> toConsole

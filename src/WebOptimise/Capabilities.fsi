@@ -12,6 +12,11 @@ type Env = {
     RunExists: string -> Task<Result<unit, ShellError>>
     ResolveInputPath: string -> ResolvedPath
     EnumerateFiles: string -> string list
+    CreateDirectory: string -> Result<unit, ShellError>
+    FileLength: string -> Result<int64, ShellError>
+    FileExists: string -> bool
+    DeleteFile: string -> Result<unit, ShellError>
+    ReadFileHeader: string -> int -> Result<byte array, ShellError>
 }
 
 [<RequireQualifiedAccess>]

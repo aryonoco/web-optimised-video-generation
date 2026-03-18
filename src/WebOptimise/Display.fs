@@ -1,17 +1,10 @@
 namespace WebOptimise
 
 open System
-open System.IO
 open System.Threading
 open System.Threading.Tasks
 open Spectre.Console
 open SpectreCoff
-
-[<NoComparison; NoEquality>]
-type VerificationResult = {
-    FileName: string
-    Outcome: Result<unit, VerificationIssue list>
-}
 
 /// SpectreCoff display functions for CLI output.
 [<RequireQualifiedAccess>]
@@ -175,17 +168,19 @@ module Display =
         |> toOutputPayload
         |> toConsole
 
-    let displayVerification (results: VerificationResult list) : bool =
+    let displayVerification (results: PipelineResult list) : bool =
         P "Verifying outputs..." |> toConsole
 
         let outcomes =
             results
             |> List.map (fun r ->
-                match r.Outcome with
+                let fileName = OutputPath.fileName r.Encode.OutputPath
+
+                match r.Verification with
                 | Ok() ->
                     Many [
                         MC(Color.Green, "\u2713")
-                        V $" %s{r.FileName}"
+                        V $" %s{fileName}"
                     ]
                     |> toConsole
 
@@ -193,7 +188,7 @@ module Display =
                 | Error issues ->
                     Many [
                         MC(Color.Red, "\u2717")
-                        V $" %s{r.FileName}"
+                        V $" %s{fileName}"
                     ]
                     |> toConsole
 
@@ -221,22 +216,18 @@ module Display =
 
     let private processWithContext
         (infos: MediaFileInfo list)
-        (processOne:
-            MediaFileInfo -> Mode -> ProgressReporter -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
-        (userMode: Mode)
+        (runOne: MediaFileInfo -> ProgressReporter -> CancellationToken -> Task<Result<PipelineResult, AppError>>)
         (ct: CancellationToken)
         (ctx: ProgressContext)
-        : Task<Result<ProcessResult list, AppError>>
+        : Task<Result<PipelineResult list, AppError>>
         =
         let total = infos.Length
 
-        let rec loop (remaining: MediaFileInfo list) (acc: ProcessResult list) (idx: int) =
+        let rec loop (remaining: MediaFileInfo list) (acc: PipelineResult list) (idx: int) =
             task {
                 match remaining with
                 | [] -> return Ok(List.rev acc)
                 | info :: rest ->
-                    let fileMode = Discovery.effectiveMode info userMode
-
                     let description =
                         $"[%d{idx}/%d{total}] %s{MediaFilePath.name info.Path}"
 
@@ -245,19 +236,10 @@ module Display =
 
                     let onProgress elapsed = progressTask.Value <- elapsed
 
-                    match! processOne info fileMode onProgress ct with
-                    | Ok encodeResult ->
+                    match! runOne info onProgress ct with
+                    | Ok pipelineResult ->
                         progressTask.Value <- info.DurationSecs
-
-                        return!
-                            loop
-                                rest
-                                ({
-                                    Result = encodeResult
-                                    Mode = fileMode
-                                 }
-                                 :: acc)
-                                (idx + 1)
+                        return! loop rest (pipelineResult :: acc) (idx + 1)
                     | Error e -> return Error e
             }
 
@@ -265,11 +247,9 @@ module Display =
 
     let withProgress
         (infos: MediaFileInfo list)
-        (processOne:
-            MediaFileInfo -> Mode -> ProgressReporter -> CancellationToken -> Task<Result<EncodeResult, AppError>>)
-        (userMode: Mode)
+        (runOne: MediaFileInfo -> ProgressReporter -> CancellationToken -> Task<Result<PipelineResult, AppError>>)
         (ct: CancellationToken)
-        : Task<Result<ProcessResult list, AppError>>
+        : Task<Result<PipelineResult list, AppError>>
         =
 
         let template = {
@@ -286,4 +266,4 @@ module Display =
             ]
         }
 
-        startProgress template (processWithContext infos processOne userMode ct)
+        startProgress template (processWithContext infos runOne ct)

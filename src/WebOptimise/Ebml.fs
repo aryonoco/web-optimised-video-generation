@@ -83,26 +83,51 @@ module Ebml =
             | ValueNone -> Error "Could not parse Segment element"
             | ValueSome(struct (_, dataStart)) -> Ok dataStart
 
-    [<TailCall>]
-    let rec scanForCues (data: ReadOnlySpan<byte>) (pos: int) : Result<unit, string> =
-        if pos >= data.Length then
-            Error "Could not locate Cues or Cluster element in file header"
-        else
+    [<Struct>]
+    type private ScanState =
+        | Scanning of scanPos: int
+        | CuesFound
+        | ScanError of scanMsg: string
 
-            match readElementId data pos with
-            | ValueNone -> Error "Could not locate Cues or Cluster element in file header"
-            | ValueSome(struct (eId, idEnd)) ->
+    let private isScanning =
+        function
+        | Scanning _ -> true
+        | _ -> false
 
-                match readElementSize data idEnd with
-                | ValueNone -> Error "Could not locate Cues or Cluster element in file header"
-                | ValueSome(struct (eSize, eDataStart)) ->
+    let private stepScan (data: ReadOnlySpan<byte>) (state: ScanState) : ScanState =
+        match state with
+        | CuesFound
+        | ScanError _ -> state
+        | Scanning pos ->
+            if pos >= data.Length then
+                ScanError "Could not locate Cues or Cluster element in file header"
+            else
 
-                    if spanEqual eId cuesElementId then
-                        Ok()
-                    elif spanEqual eId clusterElementId then
-                        Error "Cues not at front: first Cluster appears before Cues element"
-                    else
-                        scanForCues data (eDataStart + eSize)
+                match readElementId data pos with
+                | ValueNone -> ScanError "Could not locate Cues or Cluster element in file header"
+                | ValueSome(struct (eId, idEnd)) ->
+
+                    match readElementSize data idEnd with
+                    | ValueNone -> ScanError "Could not parse element size in file header"
+                    | ValueSome(struct (eSize, eDataStart)) ->
+
+                        if spanEqual eId cuesElementId then
+                            CuesFound
+                        elif spanEqual eId clusterElementId then
+                            ScanError "Cues not at front: first Cluster appears before Cues element"
+                        else
+                            Scanning(eDataStart + eSize)
+
+    let private runScan (data: ReadOnlySpan<byte>) (startPos: int) : Result<unit, string> =
+        let mutable state = Scanning startPos
+
+        while isScanning state do
+            state <- stepScan data state
+
+        match state with
+        | CuesFound -> Ok()
+        | ScanError msg -> Error msg
+        | Scanning _ -> Error "Unexpected scan state"
 
     /// Check that EBML Cues element appears before the first Cluster element.
     /// Returns Ok () if Cues is front-loaded, Error with a message otherwise.
@@ -117,4 +142,4 @@ module Ebml =
 
                 match enterSegment data segPos with
                 | Error e -> Error e
-                | Ok dataStart -> scanForCues data dataStart
+                | Ok dataStart -> runScan data dataStart

@@ -105,9 +105,19 @@ type OutputPath = private | OutputPath of string
 [<RequireQualifiedAccess>]
 module OutputPath =
 
-    let create (dir: string) (filename: string) = OutputPath(Path.Combine(dir, filename))
+    let create (dir: string) (filename: string) : Result<OutputPath, string> =
+        if String.IsNullOrWhiteSpace dir then
+            Error "Output directory must not be empty"
+        elif String.IsNullOrWhiteSpace filename then
+            Error "Output filename must not be empty"
+        else
+            Ok(OutputPath(Path.Combine(dir, filename)))
 
-    let ofFullPath (path: string) = OutputPath path
+    let ofFullPath (path: string) : Result<OutputPath, string> =
+        if String.IsNullOrWhiteSpace path then
+            Error "Output path must not be empty"
+        else
+            Ok(OutputPath path)
 
     let value (OutputPath p) = p
 
@@ -394,9 +404,10 @@ type EncodeResult = {
 }
 
 [<NoComparison; NoEquality>]
-type ProcessResult = {
-    Result: EncodeResult
+type PipelineResult = {
+    Encode: EncodeResult
     Mode: Mode
+    Verification: Result<unit, VerificationIssue list>
 }
 
 // Module functions for computed properties
@@ -525,6 +536,12 @@ module Json =
             ValueSome(seq { for i in 0 .. elem.GetArrayLength() - 1 -> elem[i] })
         else
             ValueNone
+
+    let tryParse (json: string) : Result<JsonElement, string> =
+        try
+            Ok(JsonElement.Parse(json))
+        with ex ->
+            Error ex.Message
 
 // Pure helpers
 

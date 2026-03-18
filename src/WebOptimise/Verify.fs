@@ -1,7 +1,6 @@
 namespace WebOptimise
 
 open System
-open System.IO
 open System.Text.Json
 open System.Threading.Tasks
 open FsToolkit.ErrorHandling
@@ -9,43 +8,31 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module Verify =
 
-    let toValidation (check: Task<VerificationIssue voption>) : Task<Result<unit, VerificationIssue list>> =
-        task {
-            match! check with
-            | ValueNone -> return Ok()
-            | ValueSome issue -> return Error [ issue ]
-        }
-
     // Pure validators
 
-    let validateVideoProfile (json: string) : VerificationIssue voption =
-        try
-            let root = JsonElement.Parse(json)
+    let validateVideoProfile (root: JsonElement) : Result<unit, VerificationIssue> =
+        let profile =
+            match root with
+            | Json.Prop "streams" (Json.Arr streams) ->
+                streams
+                |> Seq.tryFind (fun s ->
+                    match s with
+                    | Json.Prop "codec_type" (Json.Str "video") -> true
+                    | _ -> false
+                )
+                |> Option.bind (fun s ->
+                    match s with
+                    | Json.Prop "profile" (Json.Str p) -> Some(VideoProfile.ofString p)
+                    | _ -> None
+                )
+            | _ -> None
 
-            let profile =
-                match root with
-                | Json.Prop "streams" (Json.Arr streams) ->
-                    streams
-                    |> Seq.tryFind (fun s ->
-                        match s with
-                        | Json.Prop "codec_type" (Json.Str "video") -> true
-                        | _ -> false
-                    )
-                    |> Option.bind (fun s ->
-                        match s with
-                        | Json.Prop "profile" (Json.Str p) -> Some(VideoProfile.ofString p)
-                        | _ -> None
-                    )
-                | _ -> None
+        match profile with
+        | None -> Error VerificationIssue.NoVideoStream
+        | Some VideoProfile.High -> Ok()
+        | Some other -> Error(VerificationIssue.ProfileMismatch("High", VideoProfile.displayName other))
 
-            match profile with
-            | None -> ValueSome VerificationIssue.NoVideoStream
-            | Some VideoProfile.High -> ValueNone
-            | Some other -> ValueSome(VerificationIssue.ProfileMismatch("High", VideoProfile.displayName other))
-        with ex ->
-            ValueSome(VerificationIssue.CheckFailed $"Failed to parse ffprobe output: %s{ex.Message}")
-
-    let validateFaststart (stderr: string) : VerificationIssue voption =
+    let validateFaststart (stderr: string) : Result<unit, VerificationIssue> =
         let moovPos =
             stderr.IndexOf("type:'moov'", StringComparison.Ordinal)
 
@@ -53,16 +40,16 @@ module Verify =
             stderr.IndexOf("type:'mdat'", StringComparison.Ordinal)
 
         if moovPos = -1 || mdatPos = -1 then
-            ValueSome VerificationIssue.AtomPositionUnknown
+            Error VerificationIssue.AtomPositionUnknown
         elif moovPos > mdatPos then
-            ValueSome VerificationIssue.FaststartMissing
+            Error VerificationIssue.FaststartMissing
         else
-            ValueNone
+            Ok()
 
-    let validateCuesFront (data: ReadOnlySpan<byte>) : VerificationIssue voption =
+    let validateCuesFront (data: ReadOnlySpan<byte>) : Result<unit, VerificationIssue> =
         match Ebml.checkCuesBeforeCluster data with
-        | Ok() -> ValueNone
-        | Error msg -> ValueSome(VerificationIssue.CuesNotFront msg)
+        | Ok() -> Ok()
+        | Error msg -> Error(VerificationIssue.CuesNotFront msg)
 
     let parseKeyframeTimes (output: string) : float list =
         output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -79,7 +66,7 @@ module Verify =
         )
         |> Array.toList
 
-    let analyseKeyframeIntervals (output: string) : VerificationIssue voption =
+    let analyseKeyframeIntervals (output: string) : Result<unit, VerificationIssue> =
         let keyframeTimes = parseKeyframeTimes output
 
         if keyframeTimes.Length >= Constants.MinKeyframesForCheck then
@@ -90,20 +77,21 @@ module Verify =
                 |> List.map (fun (a, b) -> b - a)
 
             match intervals with
-            | [] -> ValueNone
+            | [] -> Ok()
             | _ ->
-                let avgInterval = List.average intervals
+                let sum = List.fold (+) 0.0 intervals
+                let avgInterval = sum / float intervals.Length
 
                 if avgInterval > Constants.MaxAcceptableKeyframeInterval then
-                    ValueSome(VerificationIssue.KeyframeIntervalTooLarge(avgInterval, Constants.KeyframeIntervalSecs))
+                    Error(VerificationIssue.KeyframeIntervalTooLarge(avgInterval, Constants.KeyframeIntervalSecs))
                 else
-                    ValueNone
+                    Ok()
         else
-            ValueNone
+            Ok()
 
     // I/O functions delegating to pure validators
 
-    let checkVideoProfile (env: Env) (path: string) : Task<VerificationIssue voption> =
+    let checkVideoProfile (env: Env) (path: string) : Task<Result<unit, VerificationIssue list>> =
         task {
             match!
                 env.RunBuffered "ffprobe" [
@@ -115,11 +103,14 @@ module Verify =
                     path
                 ]
             with
-            | Error e -> return ValueSome(VerificationIssue.CheckFailed(ShellError.format e))
-            | Ok result -> return validateVideoProfile result.StdOut
+            | Error e -> return Error [ VerificationIssue.CheckFailed(ShellError.format e) ]
+            | Ok result ->
+                match Json.tryParse result.StdOut with
+                | Error msg -> return Error [ VerificationIssue.CheckFailed $"Failed to parse ffprobe output: %s{msg}" ]
+                | Ok root -> return validateVideoProfile root |> Result.mapError List.singleton
         }
 
-    let checkFaststart (env: Env) (path: string) : Task<VerificationIssue voption> =
+    let checkFaststart (env: Env) (path: string) : Task<Result<unit, VerificationIssue list>> =
         task {
             match!
                 env.RunBuffered "ffprobe" [
@@ -128,11 +119,14 @@ module Verify =
                     path
                 ]
             with
-            | Error e -> return ValueSome(VerificationIssue.CheckFailed(ShellError.format e))
-            | Ok result -> return validateFaststart result.StdErr
+            | Error e -> return Error [ VerificationIssue.CheckFailed(ShellError.format e) ]
+            | Ok result ->
+                return
+                    validateFaststart result.StdErr
+                    |> Result.mapError List.singleton
         }
 
-    let checkKeyframeIntervals (env: Env) (path: string) : Task<VerificationIssue voption> =
+    let checkKeyframeIntervals (env: Env) (path: string) : Task<Result<unit, VerificationIssue list>> =
         task {
             match!
                 env.RunBuffered "ffprobe" [
@@ -147,27 +141,22 @@ module Verify =
                     path
                 ]
             with
-            | Error e -> return ValueSome(VerificationIssue.CheckFailed(ShellError.format e))
-            | Ok result -> return analyseKeyframeIntervals result.StdOut
+            | Error e -> return Error [ VerificationIssue.CheckFailed(ShellError.format e) ]
+            | Ok result ->
+                return
+                    analyseKeyframeIntervals result.StdOut
+                    |> Result.mapError List.singleton
         }
 
-    let checkCuesFront (path: string) : Task<VerificationIssue voption> =
-        let result =
-            try
-                let data =
-                    use fs = File.OpenRead(path)
+    let checkCuesFront (env: Env) (path: string) : Task<Result<unit, VerificationIssue list>> =
+        match env.ReadFileHeader path Constants.HeaderScanSize with
+        | Error e -> Task.FromResult(Error [ VerificationIssue.FileReadFailed(ShellError.format e) ])
+        | Ok buf ->
+            let result =
+                validateCuesFront (ReadOnlySpan(buf, 0, buf.Length))
+                |> Result.mapError List.singleton
 
-                    let buf =
-                        Array.zeroCreate (min (int fs.Length) Constants.HeaderScanSize)
-
-                    let bytesRead = fs.Read(buf, 0, buf.Length)
-                    ReadOnlySpan(buf, 0, bytesRead)
-
-                validateCuesFront data
-            with ex ->
-                ValueSome(VerificationIssue.FileReadFailed ex.Message)
-
-        Task.FromResult result
+            Task.FromResult result
 
     // Composite verifiers
 
@@ -175,9 +164,9 @@ module Verify =
         let p = OutputPath.value path
 
         taskValidation {
-            let! _ = toValidation (checkVideoProfile env p)
-            and! _ = toValidation (checkFaststart env p)
-            and! _ = toValidation (checkKeyframeIntervals env p)
+            let! _ = checkVideoProfile env p
+            and! _ = checkFaststart env p
+            and! _ = checkKeyframeIntervals env p
             return ()
         }
 
@@ -185,15 +174,14 @@ module Verify =
         let p = OutputPath.value path
 
         taskValidation {
-            let! _ = toValidation (checkFaststart env p)
+            let! _ = checkFaststart env p
             return ()
         }
 
     let verifyWebm (env: Env) (path: OutputPath) : Task<Result<unit, VerificationIssue list>> =
-        ignore env
         let p = OutputPath.value path
 
         taskValidation {
-            let! _ = toValidation (checkCuesFront p)
+            let! _ = checkCuesFront env p
             return ()
         }

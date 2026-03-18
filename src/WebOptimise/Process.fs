@@ -1,7 +1,6 @@
 namespace WebOptimise
 
 open System
-open System.IO
 open System.Text
 open System.Threading
 open System.Threading.Tasks
@@ -33,65 +32,61 @@ module Process =
         : Task<Result<EncodeResult, AppError>>
         =
         task {
-            let createDirResult =
-                try
-                    Directory.CreateDirectory outputDir |> ignore
-                    Ok()
-                with ex ->
-                    Error(AppError.Process(ProcessFailure.OutputDirFailed(outputDir, ex.Message)))
-
-            match createDirResult with
-            | Error e -> return Error e
+            match env.CreateDirectory outputDir with
+            | Error e -> return Error(AppError.Process(ProcessFailure.OutputDirFailed(outputDir, ShellError.format e)))
             | Ok() ->
 
-                let outputPath =
+                match
                     OutputPath.create
                         outputDir
                         (Discovery.sanitiseFilename (Guid.NewGuid()) (MediaFilePath.name info.Path) config.OutputExt)
+                with
+                | Error msg -> return Error(AppError.Process(ProcessFailure.OutputDirFailed(outputDir, msg)))
+                | Ok outputPath ->
 
-                let cmd = config.CmdBuilder info outputPath
-                let args = Commands.render cmd
-                let stdErrBuilder = StringBuilder()
+                    let cmd = config.CmdBuilder info outputPath
+                    let args = Commands.render cmd
+                    let stdErrBuilder = StringBuilder()
 
-                let! shellResult =
-                    env.RunStreaming "ffmpeg" args (parseProgressLine onProgress info.DurationSecs) stdErrBuilder ct
+                    let! shellResult =
+                        env.RunStreaming "ffmpeg" args (parseProgressLine onProgress info.DurationSecs) stdErrBuilder ct
 
-                let encodeResult =
-                    match shellResult with
-                    | Error ShellError.Cancelled -> Error(AppError.Process ProcessFailure.Cancelled)
-                    | Error e -> Error(AppError.Process(ProcessFailure.ShellFailed e))
-                    | Ok exitCode when exitCode <> 0 ->
-                        let stderr = stdErrBuilder.ToString()
+                    let encodeResult =
+                        match shellResult with
+                        | Error ShellError.Cancelled -> Error(AppError.Process ProcessFailure.Cancelled)
+                        | Error e -> Error(AppError.Process(ProcessFailure.ShellFailed e))
+                        | Ok exitCode when exitCode <> 0 ->
+                            let stderr = stdErrBuilder.ToString()
 
-                        Error(
-                            AppError.Process(
-                                ProcessFailure.FfmpegFailed(
-                                    exitCode,
-                                    stderr,
-                                    "ffmpeg" :: args,
-                                    MediaFilePath.name info.Path,
-                                    config.ErrorVerb
+                            Error(
+                                AppError.Process(
+                                    ProcessFailure.FfmpegFailed(
+                                        exitCode,
+                                        stderr,
+                                        "ffmpeg" :: args,
+                                        MediaFilePath.name info.Path,
+                                        config.ErrorVerb
+                                    )
                                 )
                             )
-                        )
-                    | Ok _ ->
-                        let outputSize =
-                            System.IO.FileInfo(OutputPath.value outputPath).Length
+                        | Ok _ ->
+                            match env.FileLength(OutputPath.value outputPath) with
+                            | Error e -> Error(AppError.Process(ProcessFailure.ShellFailed e))
+                            | Ok outputSize ->
+                                Ok {
+                                    InputPath = info.Path
+                                    OutputPath = outputPath
+                                    InputSize = info.SizeBytes
+                                    OutputSize = outputSize
+                                }
 
-                        Ok {
-                            InputPath = info.Path
-                            OutputPath = outputPath
-                            InputSize = info.SizeBytes
-                            OutputSize = outputSize
-                        }
+                    match encodeResult with
+                    | Error e ->
+                        if env.FileExists(OutputPath.value outputPath) then
+                            env.DeleteFile(OutputPath.value outputPath) |> ignore
 
-                match encodeResult with
-                | Error e ->
-                    if File.Exists(OutputPath.value outputPath) then
-                        File.Delete(OutputPath.value outputPath)
-
-                    return Error e
-                | Ok r -> return Ok r
+                        return Error e
+                    | Ok r -> return Ok r
         }
 
     let processFile
@@ -111,24 +106,27 @@ module Process =
 
             let existing =
                 Discovery.matchExistingOutput existingFiles (MediaFilePath.name info.Path) config.OutputExt
-                |> ValueOption.map OutputPath.ofFullPath
 
             match existing, overwrite with
-            | ValueSome existingPath, false ->
+            | ValueSome existingFullPath, false ->
                 onProgress info.DurationSecs
 
-                let outputSize =
-                    System.IO.FileInfo(OutputPath.value existingPath).Length
-
-                return
-                    Ok {
-                        InputPath = info.Path
-                        OutputPath = existingPath
-                        InputSize = info.SizeBytes
-                        OutputSize = outputSize
-                    }
-            | ValueSome existingPath, true ->
-                File.Delete(OutputPath.value existingPath)
-                return! runEncode env info outputDir config onProgress ct
+                match env.FileLength existingFullPath with
+                | Error e -> return Error(AppError.Process(ProcessFailure.ShellFailed e))
+                | Ok outputSize ->
+                    match OutputPath.ofFullPath existingFullPath with
+                    | Error msg -> return Error(AppError.Process(ProcessFailure.OutputDirFailed(existingFullPath, msg)))
+                    | Ok existingPath ->
+                        return
+                            Ok {
+                                InputPath = info.Path
+                                OutputPath = existingPath
+                                InputSize = info.SizeBytes
+                                OutputSize = outputSize
+                            }
+            | ValueSome existingFullPath, true ->
+                match env.DeleteFile existingFullPath with
+                | Error e -> return Error(AppError.Process(ProcessFailure.ShellFailed e))
+                | Ok() -> return! runEncode env info outputDir config onProgress ct
             | ValueNone, _ -> return! runEncode env info outputDir config onProgress ct
         }

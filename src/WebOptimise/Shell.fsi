@@ -29,3 +29,9 @@ module Shell =
     val resolveInputPath: path: string -> ResolvedPath
 
     val enumerateFiles: dir: string -> string list
+
+    val createDirectory: dir: string -> Result<unit, ShellError>
+    val fileLength: path: string -> Result<int64, ShellError>
+    val fileExists: path: string -> bool
+    val deleteFile: path: string -> Result<unit, ShellError>
+    val readFileHeader: path: string -> maxBytes: int -> Result<byte array, ShellError>

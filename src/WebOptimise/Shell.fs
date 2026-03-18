@@ -89,3 +89,38 @@ module Shell =
             System.IO.Directory.EnumerateFiles dir |> Seq.toList
         else
             []
+
+    let createDirectory (dir: string) : Result<unit, ShellError> =
+        try
+            System.IO.Directory.CreateDirectory dir |> ignore
+            Ok()
+        with ex ->
+            Error(ShellError.Failed("filesystem", ex.Message))
+
+    let fileLength (path: string) : Result<int64, ShellError> =
+        try
+            Ok(System.IO.FileInfo(path).Length)
+        with ex ->
+            Error(ShellError.Failed("filesystem", ex.Message))
+
+    let fileExists (path: string) : bool = System.IO.File.Exists path
+
+    let deleteFile (path: string) : Result<unit, ShellError> =
+        try
+            System.IO.File.Delete path
+            Ok()
+        with ex ->
+            Error(ShellError.Failed("filesystem", ex.Message))
+
+    let readFileHeader (path: string) (maxBytes: int) : Result<byte array, ShellError> =
+        try
+            use fs = System.IO.File.OpenRead(path)
+            let buf = Array.zeroCreate (min (int fs.Length) maxBytes)
+            let bytesRead = fs.Read(buf, 0, buf.Length)
+
+            if bytesRead = buf.Length then
+                Ok buf
+            else
+                Ok(buf[.. bytesRead - 1])
+        with ex ->
+            Error(ShellError.Failed("filesystem", ex.Message))

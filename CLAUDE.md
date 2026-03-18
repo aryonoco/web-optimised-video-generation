@@ -25,7 +25,7 @@ After completing each significant section of work (a refactor, a new feature, a 
 1. `dotnet fantomas src/` — format all source files
 2. `dotnet fantomas --check src/` — verify formatting (exit 0 = OK, exit 1 = needs formatting, exit 99 = error)
 3. `dotnet fsharplint lint WebOptimise.slnx` — lint; fix all reported issues
-4. `dotnet build -c Release` — zero warnings/errors (includes all 25 G-Research + Ionide analyzers automatically via FSharp.Analyzers.Build; all findings treated as errors)
+4. `dotnet build -c Release` — zero warnings/errors (includes all G-Research + Ionide analyzers automatically via FSharp.Analyzers.Build; all findings treated as errors)
 
 ## Architecture
 
@@ -41,13 +41,13 @@ CLI tool that optimises video files for progressive web delivery using ffmpeg. T
 
 ### Module dependency order
 
-Matches the compile order in `.fsproj`: Constants → Domain → Shell → ProbeParse → Commands → Ebml → Verify → ModeConfig → Discovery → Process → Display → Cli → Program.
+Matches the compile order in `.fsproj`: Constants → Domain → Shell → Capabilities → ProbeParse → Commands → Ebml → Verify → ModeConfig → Discovery → Process → Display → Cli → Program.
 
 `ModeConfig.fs` ties modes to their command builders, verifiers, and output extensions — the dispatch table that avoids match expressions scattered across modules.
 
 ### Functional principles
 
-This codebase follows strict functional programming principles — all changes must preserve them. Use **Railway Oriented Programming**: propagate errors via `Result<'T, AppError>` and `taskResult`/`result` computation expressions; never throw exceptions for domain errors. Maintain the **Functional Core, Imperative Shell** separation: pure modules (Constants, Domain, Commands, ProbeParse, Ebml, ModeConfig, Discovery) must contain zero side effects; I/O belongs exclusively in Shell, Process, Verify, Display, and Cli. Shell provides all I/O primitives (`resolveInputPath`, `enumerateFiles`, `runBuffered`, `runStreaming`, `runExists`). Apply **Parse, Don't Validate**: use branded types with private constructors and smart constructors to make illegal states unrepresentable; use discriminated unions for closed sets (e.g. `ShellError`, `OutputPath`, `ResolvedPath`, `FfmpegCmd`). Keep **immutability by default**: no `mutable` in pure modules; mutation is acceptable only at I/O boundaries or for performance-critical low-level code. Write **total functions**: return `Result`, `Option`, or `ValueOption` — never throw for expected failures; use active patterns for safe parsing. Prefer **composition over inheritance**: pipeline operators, `map`/`bind`/`fold`, and computation expressions — no classes, no inheritance hierarchies. Use **value types for performance** where appropriate: `[<Struct>]` DUs and records, `voption` for optional fields, struct tuples for multi-value returns.
+This codebase follows strict functional programming principles — all changes must preserve them. Use **Railway Oriented Programming**: propagate errors via `Result<'T, AppError>` and `taskResult`/`result` computation expressions; never throw exceptions for domain errors. Maintain the **Functional Core, Imperative Shell** separation: pure modules (Constants, Domain, Commands, ProbeParse, Ebml, ModeConfig, Discovery) must contain zero side effects; I/O belongs exclusively in Shell, Process, Verify, Display, and Cli. Shell provides all I/O primitives (`resolveInputPath`, `enumerateFiles`, `runBuffered`, `runStreaming`, `runExists`, `createDirectory`, `fileLength`, `fileExists`, `deleteFile`, `readFileHeader`). Apply **Parse, Don't Validate**: use branded types with private constructors and smart constructors to make illegal states unrepresentable; use discriminated unions for closed sets (e.g. `ShellError`, `OutputPath`, `ResolvedPath`, `FfmpegCmd`). Keep **immutability by default**: no `mutable` in pure modules; mutation is acceptable only at I/O boundaries or for performance-critical low-level code. Write **total functions**: return `Result`, `Option`, or `ValueOption` — never throw for expected failures; use active patterns for safe parsing. Prefer **composition over inheritance**: pipeline operators, `map`/`bind`/`fold`, and computation expressions — no classes, no inheritance hierarchies. Use **value types for performance** where appropriate: `[<Struct>]` DUs and records, struct tuples for multi-value returns.
 
 ### Output structure
 

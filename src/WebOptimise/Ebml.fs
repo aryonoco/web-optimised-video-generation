@@ -15,26 +15,29 @@ module Ebml =
         else
             9 - (int (System.Numerics.BitOperations.Log2(uint firstByte)) + 1)
 
-    let private readElementId (data: ReadOnlySpan<byte>) (pos: int) : struct (ReadOnlyMemory<byte> * int) =
+    let private readElementId
+        (data: ReadOnlySpan<byte>)
+        (pos: int)
+        : struct (ReadOnlyMemory<byte> * int) voption =
         if pos >= data.Length then
-            struct (ReadOnlyMemory.Empty, pos)
+            ValueNone
         else
             let width = vintWidth data[pos]
 
             if width = 0 || pos + width > data.Length then
-                struct (ReadOnlyMemory.Empty, pos)
+                ValueNone
             else
                 let slice = data.Slice(pos, width).ToArray()
-                struct (ReadOnlyMemory slice, pos + width)
+                ValueSome(struct (ReadOnlyMemory slice, pos + width))
 
-    let private readElementSize (data: ReadOnlySpan<byte>) (pos: int) : struct (int * int) =
+    let private readElementSize (data: ReadOnlySpan<byte>) (pos: int) : struct (int * int) voption =
         if pos >= data.Length then
-            struct (-1, pos)
+            ValueNone
         else
             let width = vintWidth data[pos]
 
             if width = 0 || pos + width > data.Length then
-                struct (-1, pos)
+                ValueNone
             else
                 let mutable value = 0L
 
@@ -43,9 +46,47 @@ module Ebml =
 
                 let mask = (1L <<< (8 * width)) - 1L
                 let masked = value &&& (mask >>> width)
-                struct (int masked, pos + width)
+                ValueSome(struct (int masked, pos + width))
 
-    let private spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) = a.Span.SequenceEqual(b.Span)
+    let private spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) =
+        a.Span.SequenceEqual(b.Span)
+
+    let private skipEbmlHeader (data: ReadOnlySpan<byte>) : Result<int, string> =
+        match readElementId data 0 with
+        | ValueNone -> Error "Could not parse EBML header"
+        | ValueSome(struct (_, pos1)) ->
+
+        match readElementSize data pos1 with
+        | ValueNone -> Error "Could not parse EBML header"
+        | ValueSome(struct (size, pos2)) -> Ok(pos2 + size)
+
+    let private enterSegment (data: ReadOnlySpan<byte>) (pos: int) : Result<int, string> =
+        match readElementId data pos with
+        | ValueNone -> Error "Could not parse Segment element"
+        | ValueSome(struct (_, segEnd)) ->
+
+        match readElementSize data segEnd with
+        | ValueNone -> Error "Could not parse Segment element"
+        | ValueSome(struct (_, dataStart)) -> Ok dataStart
+
+    let rec private scanForCues (data: ReadOnlySpan<byte>) (pos: int) : Result<unit, string> =
+        if pos >= data.Length then
+            Error "Could not locate Cues or Cluster element in file header"
+        else
+
+        match readElementId data pos with
+        | ValueNone -> Error "Could not locate Cues or Cluster element in file header"
+        | ValueSome(struct (eId, idEnd)) ->
+
+        match readElementSize data idEnd with
+        | ValueNone -> Error "Could not locate Cues or Cluster element in file header"
+        | ValueSome(struct (eSize, eDataStart)) ->
+
+        if spanEqual eId cuesElementId then Ok()
+        elif spanEqual eId clusterElementId then
+            Error "Cues not at front: first Cluster appears before Cues element"
+        else
+            scanForCues data (eDataStart + eSize)
 
     /// Check that EBML Cues element appears before the first Cluster element.
     /// Returns Ok () if Cues is front-loaded, Error with a message otherwise.
@@ -53,39 +94,11 @@ module Ebml =
         if data.Length < 4 then
             Error "File too small for EBML verification"
         else
-            // Skip EBML header element
-            let struct (elemId, pos1) = readElementId data 0
-            let struct (size, pos2) = readElementSize data pos1
 
-            if elemId.IsEmpty || size < 0 then
-                Error "Could not parse EBML header"
-            else
-                let mutable pos = pos2 + size
+        match skipEbmlHeader data with
+        | Error e -> Error e
+        | Ok segPos ->
 
-                // Read Segment element header
-                let struct (segId, segEnd) = readElementId data pos
-                let struct (_, dataStart) = readElementSize data segEnd
-
-                if segId.IsEmpty then
-                    Error "Could not parse Segment element"
-                else
-                    pos <- dataStart
-                    let mutable result = Error "Could not locate Cues or Cluster element in file header"
-                    let mutable found = false
-
-                    while pos < data.Length && not found do
-                        let struct (eId, idEnd) = readElementId data pos
-                        let struct (eSize, eDataStart) = readElementSize data idEnd
-
-                        if eId.IsEmpty || eSize < 0 then
-                            found <- true
-                        elif spanEqual eId cuesElementId then
-                            result <- Ok()
-                            found <- true
-                        elif spanEqual eId clusterElementId then
-                            result <- Error "Cues not at front: first Cluster appears before Cues element"
-                            found <- true
-                        else
-                            pos <- eDataStart + eSize
-
-                    result
+        match enterSegment data segPos with
+        | Error e -> Error e
+        | Ok dataStart -> scanForCues data dataStart

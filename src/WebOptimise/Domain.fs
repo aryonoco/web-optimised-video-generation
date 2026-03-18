@@ -163,26 +163,26 @@ module Parse =
             | _ -> 0.0
         | _ -> 0.0
 
-    let safeInt64 (value: string | null) : int64 voption =
+    let safeInt64 (value: string option) : int64 voption =
         match value with
-        | null -> ValueNone
-        | s ->
+        | None -> ValueNone
+        | Some s ->
             match System.Int64.TryParse s with
             | true, v -> ValueSome v
             | _ -> ValueNone
 
-    let safeInt (value: string | null) : int =
+    let safeInt (value: string option) : int =
         match value with
-        | null -> 0
-        | s ->
+        | None -> 0
+        | Some s ->
             match System.Int32.TryParse s with
             | true, v -> v
             | _ -> 0
 
-    let safeFloat (value: string | null) : float =
+    let safeFloat (value: string option) : float =
         match value with
-        | null -> 0.0
-        | s ->
+        | None -> 0.0
+        | Some s ->
             match System.Double.TryParse s with
             | true, v -> v
             | _ -> 0.0

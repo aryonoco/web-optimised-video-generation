@@ -49,6 +49,43 @@ module OutputExtension =
 
     let value (OutputExtension e) = e
 
+[<Struct; RequireQualifiedAccess>]
+type ShellError =
+    | NotFound of tool: string
+    | Cancelled
+    | NonZeroExit of tool: string * exitCode: int * stderr: string
+    | Failed of tool: string * message: string
+
+[<RequireQualifiedAccess>]
+module ShellError =
+
+    let format =
+        function
+        | ShellError.NotFound tool -> $"%s{tool} not found in PATH"
+        | ShellError.Cancelled -> "Operation cancelled"
+        | ShellError.NonZeroExit(tool, code, stderr) -> $"%s{tool} exited with code %d{code}\n%s{stderr}"
+        | ShellError.Failed(tool, msg) -> $"%s{tool}: %s{msg}"
+
+[<Struct>]
+type OutputPath = private | OutputPath of string
+
+[<RequireQualifiedAccess>]
+module OutputPath =
+
+    let create (dir: string) (filename: string) = OutputPath(Path.Combine(dir, filename))
+
+    let ofFullPath (path: string) = OutputPath path
+
+    let value (OutputPath p) = p
+
+    let fileName (OutputPath p) = Path.GetFileName p |> NullSafe.path
+
+[<RequireQualifiedAccess>]
+type ResolvedPath =
+    | File of fullPath: string * ext: string
+    | Directory of fullPath: string * files: string list
+    | NotFound of originalPath: string
+
 // Error DU
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
@@ -67,6 +104,13 @@ module AppError =
         | AppError.EncodeError(msg, _) -> msg
         | AppError.ValidationError msg -> msg
         | AppError.IoError msg -> msg
+
+    let ofShellError (e: ShellError) =
+        match e with
+        | ShellError.NotFound _ -> AppError.ValidationError(ShellError.format e)
+        | ShellError.Cancelled -> AppError.IoError(ShellError.format e)
+        | ShellError.NonZeroExit _ -> AppError.EncodeError(ShellError.format e, ValueNone)
+        | ShellError.Failed _ -> AppError.EncodeError(ShellError.format e, ValueNone)
 
 [<Struct; RequireQualifiedAccess>]
 type Mode =
@@ -185,7 +229,7 @@ type MediaFileInfo = {
 [<NoComparison; NoEquality>]
 type EncodeResult = {
     InputPath: MediaFilePath
-    OutputPath: string
+    OutputPath: OutputPath
     InputSize: int64
     OutputSize: int64
 }

@@ -75,11 +75,11 @@ module Cli =
         taskResult {
             do!
                 Shell.runExists "ffmpeg"
-                |> TaskResult.mapError AppError.ValidationError
+                |> TaskResult.mapError (ShellError.format >> AppError.ValidationError)
 
             do!
                 Shell.runExists "ffprobe"
-                |> TaskResult.mapError AppError.ValidationError
+                |> TaskResult.mapError (ShellError.format >> AppError.ValidationError)
         }
 
     let private probeFile (path: MediaFilePath) : Task<Result<MediaFileInfo, AppError>> =
@@ -95,7 +95,11 @@ module Cli =
                     MediaFilePath.value path
                 ]
             with
-            | Error msg -> return Error(AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{msg}")
+            | Error e ->
+                return
+                    Error(
+                        AppError.ProbeError $"ffprobe failed for %s{MediaFilePath.name path}: %s{ShellError.format e}"
+                    )
             | Ok probeResult ->
                 if probeResult.ExitCode <> 0 then
                     return
@@ -107,8 +111,14 @@ module Cli =
                     return ProbeParse.fromJson path probeResult.StdOut
         }
 
+    [<RequireQualifiedAccess; NoComparison; NoEquality>]
+    type private PipelineOutcome =
+        | NothingToDo
+        | DryRun
+        | Process of args: ParsedArgs * infos: MediaFileInfo list * modes: Mode list
+
     let private processOne
-        (args: ParsedArgs)
+        (overwrite: bool)
         (info: MediaFileInfo)
         (fileMode: WebOptimise.Mode)
         (onProgress: float -> unit)
@@ -116,7 +126,7 @@ module Cli =
         : Task<Result<EncodeResult, AppError>>
         =
         let outputDir = Discovery.outputDir info
-        Process.processFile info outputDir fileMode args.Overwrite onProgress ct
+        Process.processFile info outputDir fileMode overwrite onProgress ct
 
     let private runProcessing (args: ParsedArgs) (infos: MediaFileInfo list) (effectiveModes: Mode list) : Task<int> =
         task {
@@ -127,14 +137,30 @@ module Cli =
                 cts.Cancel()
             )
 
-            let! progressResult = Display.withProgress infos (processOne args) args.Mode cts.Token
+            let! progressResult = Display.withProgress infos (processOne args.Overwrite) args.Mode cts.Token
 
             match progressResult with
             | Error e ->
                 Display.printError (AppError.message e)
                 return 1
             | Ok resultsWithModes ->
-                let! allOk = Display.displayVerification resultsWithModes
+                let! verificationResults =
+                    resultsWithModes
+                    |> List.map (fun pr ->
+                        task {
+                            let config = ModeConfig.forMode pr.Mode
+                            let! vr = config.Verifier pr.Result.OutputPath
+
+                            return {
+                                FileName = OutputPath.fileName pr.Result.OutputPath
+                                Outcome = vr
+                            }
+                        }
+                    )
+                    |> Task.WhenAll
+
+                let allOk =
+                    Display.displayVerification (Array.toList verificationResults)
 
                 NL |> toConsole
                 Display.printSummary (resultsWithModes |> List.map _.Result)
@@ -163,16 +189,25 @@ module Cli =
                 taskResult {
                     let! args = parseArgs argv
                     do! validateEnvironment ()
-                    let! files = Discovery.findFiles args.Paths
+                    let resolved = args.Paths |> List.map Shell.resolveInputPath
+                    let! files = Discovery.collectFiles resolved
 
                     if files.IsEmpty then
                         E "No supported media files found." |> toConsole
-                        return None
+                        return PipelineOutcome.NothingToDo
                     else
 
                         do! Discovery.rejectMkvEncode files args.Mode
 
-                        let! infos = files |> List.traverseTaskResultM probeFile
+                        let! infos =
+                            files
+                            |> List.traverseTaskResultA probeFile
+                            |> TaskResult.mapError (fun errors ->
+                                errors
+                                |> List.map AppError.message
+                                |> String.concat "\n"
+                                |> AppError.ProbeError
+                            )
 
                         do! Discovery.validateMkvCodecs infos
 
@@ -207,10 +242,10 @@ module Cli =
                                 | _ -> "processed"
 
                             E $"Dry run \u2014 no files were %s{dryVerb}." |> toConsole
-                            return None
+                            return PipelineOutcome.DryRun
                         else
 
-                            return Some(args, infos, effectiveModes)
+                            return PipelineOutcome.Process(args, infos, effectiveModes)
                 }
 
             let! pipelineResult = pipeline
@@ -219,6 +254,8 @@ module Cli =
             | Error e ->
                 Display.printError (AppError.message e)
                 return 1
-            | Ok None -> return 0
-            | Ok(Some(args, infos, effectiveModes)) -> return! runProcessing args infos effectiveModes
+            | Ok PipelineOutcome.NothingToDo -> return 0
+            | Ok PipelineOutcome.DryRun -> return 0
+            | Ok(PipelineOutcome.Process(args, infos, effectiveModes)) ->
+                return! runProcessing args infos effectiveModes
         }

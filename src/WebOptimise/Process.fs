@@ -44,49 +44,48 @@ module Process =
             | Ok() ->
 
                 let outputPath =
-                    Path.Combine(outputDir, Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
+                    OutputPath.create
+                        outputDir
+                        (Discovery.sanitiseFilename (Guid.NewGuid()) (MediaFilePath.name info.Path) config.OutputExt)
 
-                let args = config.CmdBuilder info outputPath
+                let cmd = config.CmdBuilder info outputPath
+                let args = Commands.render cmd
                 let stdErrBuilder = StringBuilder()
 
                 let! shellResult =
                     Shell.runStreaming "ffmpeg" args (parseProgressLine onProgress info.DurationSecs) stdErrBuilder ct
 
-                match shellResult with
-                | Error "cancelled" ->
-                    if File.Exists outputPath then
-                        File.Delete outputPath
+                let encodeResult =
+                    match shellResult with
+                    | Error ShellError.Cancelled -> Error(AppError.IoError "Operation cancelled")
+                    | Error e -> Error(AppError.ofShellError e)
+                    | Ok exitCode when exitCode <> 0 ->
+                        let stderr = stdErrBuilder.ToString()
 
-                    return Error(AppError.IoError "Operation cancelled")
-                | Error msg ->
-                    if File.Exists outputPath then
-                        File.Delete outputPath
-
-                    return Error(AppError.EncodeError($"Unexpected error: %s{msg}", ValueNone))
-                | Ok exitCode when exitCode <> 0 ->
-                    if File.Exists outputPath then
-                        File.Delete outputPath
-
-                    let stderr = stdErrBuilder.ToString()
-
-                    return
                         Error(
                             AppError.EncodeError(
                                 $"%s{config.ErrorVerb} failed for %s{MediaFilePath.name info.Path}: exit code %d{exitCode}\n%s{stderr}",
                                 ValueSome("ffmpeg" :: args)
                             )
                         )
-                | Ok _ ->
+                    | Ok _ ->
+                        let outputSize =
+                            System.IO.FileInfo(OutputPath.value outputPath).Length
 
-                    let outputSize = System.IO.FileInfo(outputPath).Length
-
-                    return
                         Ok {
                             InputPath = info.Path
                             OutputPath = outputPath
                             InputSize = info.SizeBytes
                             OutputSize = outputSize
                         }
+
+                match encodeResult with
+                | Error e ->
+                    if File.Exists(OutputPath.value outputPath) then
+                        File.Delete(OutputPath.value outputPath)
+
+                    return Error e
+                | Ok r -> return Ok r
         }
 
     let processFile
@@ -101,13 +100,18 @@ module Process =
         task {
             let config = ModeConfig.forMode mode
 
+            let existingFiles = Shell.enumerateFiles outputDir
+
             let existing =
-                Discovery.findExistingOutput outputDir (MediaFilePath.name info.Path) config.OutputExt
+                Discovery.matchExistingOutput existingFiles (MediaFilePath.name info.Path) config.OutputExt
+                |> Option.map OutputPath.ofFullPath
 
             match existing, overwrite with
             | Some existingPath, false ->
                 onProgress info.DurationSecs
-                let outputSize = System.IO.FileInfo(existingPath).Length
+
+                let outputSize =
+                    System.IO.FileInfo(OutputPath.value existingPath).Length
 
                 return
                     Ok {
@@ -117,7 +121,7 @@ module Process =
                         OutputSize = outputSize
                     }
             | Some existingPath, true ->
-                File.Delete existingPath
+                File.Delete(OutputPath.value existingPath)
                 return! runEncode info outputDir config onProgress ct
             | None, _ -> return! runEncode info outputDir config onProgress ct
         }

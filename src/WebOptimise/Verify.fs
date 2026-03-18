@@ -9,7 +9,7 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module Verify =
 
-    let runFfprobe (args: string list) : Task<Result<BufferedOutput, string>> = Shell.runBuffered "ffprobe" args
+    let runFfprobe (args: string list) : Task<Result<BufferedOutput, ShellError>> = Shell.runBuffered "ffprobe" args
 
     let toValidation (check: Task<string option>) : Task<Result<unit, string list>> =
         task {
@@ -30,7 +30,7 @@ module Verify =
                     path
                 ]
             with
-            | Error msg -> return Some msg
+            | Error e -> return Some(ShellError.format e)
             | Ok result ->
                 try
                     let root = JsonElement.Parse(result.StdOut)
@@ -68,7 +68,7 @@ module Verify =
                     path
                 ]
             with
-            | Error msg -> return Some msg
+            | Error e -> return Some(ShellError.format e)
             | Ok result ->
                 let stderr = result.StdErr
 
@@ -141,7 +141,7 @@ module Verify =
 
             return
                 match probeResult with
-                | Error msg -> Some msg
+                | Error e -> Some(ShellError.format e)
                 | Ok result -> analyseKeyframeIntervals result.StdOut
         }
 
@@ -165,14 +165,28 @@ module Verify =
 
         Task.FromResult result
 
-    let verifyEncoded (path: string) : Task<Result<unit, string list>> =
+    let verifyEncoded (path: OutputPath) : Task<Result<unit, string list>> =
+        let p = OutputPath.value path
+
         taskValidation {
-            let! _ = toValidation (checkVideoProfile path)
-            and! _ = toValidation (checkFaststart path)
-            and! _ = toValidation (checkKeyframeIntervals path)
+            let! _ = toValidation (checkVideoProfile p)
+            and! _ = toValidation (checkFaststart p)
+            and! _ = toValidation (checkKeyframeIntervals p)
             return ()
         }
 
-    let verifyRemuxed (path: string) : Task<Result<unit, string list>> = toValidation (checkFaststart path)
+    let verifyRemuxed (path: OutputPath) : Task<Result<unit, string list>> =
+        let p = OutputPath.value path
 
-    let verifyWebm (path: string) : Task<Result<unit, string list>> = toValidation (checkCuesFront path)
+        taskValidation {
+            let! _ = toValidation (checkFaststart p)
+            return ()
+        }
+
+    let verifyWebm (path: OutputPath) : Task<Result<unit, string list>> =
+        let p = OutputPath.value path
+
+        taskValidation {
+            let! _ = toValidation (checkCuesFront p)
+            return ()
+        }

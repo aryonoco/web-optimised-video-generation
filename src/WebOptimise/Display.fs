@@ -1,10 +1,17 @@
 namespace WebOptimise
 
+open System
 open System.IO
 open System.Threading
 open System.Threading.Tasks
 open Spectre.Console
 open SpectreCoff
+
+[<NoComparison; NoEquality>]
+type VerificationResult = {
+    FileName: string
+    Outcome: Result<unit, string list>
+}
 
 /// SpectreCoff display functions for CLI output.
 [<RequireQualifiedAccess>]
@@ -38,7 +45,7 @@ module Display =
 
                 Payloads [
                     V(MediaFilePath.name info.Path)
-                    C(Discovery.sanitiseFilename (MediaFilePath.name info.Path) config.OutputExt)
+                    C(Discovery.sanitiseFilename (Guid.NewGuid()) (MediaFilePath.name info.Path) config.OutputExt)
                     V(MediaFileInfo.durationDisplay info)
                     V $"%.1f{MediaFileInfo.sizeMB info} MB"
                     V(VideoStream.resolutionLabel info.Video)
@@ -121,7 +128,7 @@ module Display =
 
                 Payloads [
                     V(MediaFilePath.name r.InputPath)
-                    V(Path.GetFileName r.OutputPath |> NullSafe.path)
+                    V(OutputPath.fileName r.OutputPath)
                     V $"%.1f{inputMb} MB"
                     V $"%.1f{outputMb} MB"
                     MC(color, EncodeResult.savingsDisplay r)
@@ -168,48 +175,39 @@ module Display =
         |> toOutputPayload
         |> toConsole
 
-    let private verifyOne (pr: ProcessResult) : Task<bool> =
-        task {
-            let config = ModeConfig.forMode pr.Mode
-            let! verifyResult = config.Verifier pr.Result.OutputPath
+    let displayVerification (results: VerificationResult list) : bool =
+        P "Verifying outputs..." |> toConsole
 
-            let name =
-                Path.GetFileName pr.Result.OutputPath |> NullSafe.path
-
-            match verifyResult with
-            | Ok() ->
-                Many [
-                    MC(Color.Green, "\u2713")
-                    V $" %s{name}"
-                ]
-                |> toConsole
-
-                return true
-            | Error issues ->
-                Many [
-                    MC(Color.Red, "\u2717")
-                    V $" %s{name}"
-                ]
-                |> toConsole
-
-                for issue in issues do
+        let outcomes =
+            results
+            |> List.map (fun r ->
+                match r.Outcome with
+                | Ok() ->
                     Many [
-                        MC(Color.Red, "  \u2192")
-                        V $" %s{issue}"
+                        MC(Color.Green, "\u2713")
+                        V $" %s{r.FileName}"
                     ]
                     |> toConsole
 
-                return false
-        }
+                    true
+                | Error issues ->
+                    Many [
+                        MC(Color.Red, "\u2717")
+                        V $" %s{r.FileName}"
+                    ]
+                    |> toConsole
 
-    let displayVerification (results: ProcessResult list) : Task<bool> =
-        task {
-            P "Verifying outputs..." |> toConsole
+                    for issue in issues do
+                        Many [
+                            MC(Color.Red, "  \u2192")
+                            V $" %s{issue}"
+                        ]
+                        |> toConsole
 
-            let! outcomes = results |> List.map verifyOne |> Task.WhenAll
+                    false
+            )
 
-            return outcomes |> Array.forall id
-        }
+        List.forall id outcomes
 
     /// Corrected SpectreCoff.Progress.startCustom — upstream ignores AutoClear/HideCompleted.
     let private startProgress (template: ProgressTemplate) (operation: ProgressOperation<'T>) =

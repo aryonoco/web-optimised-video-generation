@@ -2,9 +2,9 @@ namespace WebOptimise
 
 open System.Threading.Tasks
 
-type CmdBuilder = MediaFileInfo -> string -> string list
+type CmdBuilder = MediaFileInfo -> OutputPath -> FfmpegCmd
 
-type Verifier = string -> Task<Result<unit, string list>>
+type Verifier = OutputPath -> Task<Result<unit, string list>>
 
 [<NoComparison; NoEquality>]
 type ModeConfig = {
@@ -20,7 +20,7 @@ type ModeConfig = {
 module ModeConfig =
 
     let private remuxConfig = {
-        CmdBuilder = Commands.buildRemuxCmd
+        CmdBuilder = Commands.buildRemux
         Verifier = Verify.verifyRemuxed
         OutputExt = OutputExtension.mp4
         ErrorVerb = "Remuxing"
@@ -29,7 +29,7 @@ module ModeConfig =
     }
 
     let private encodeConfig = {
-        CmdBuilder = Commands.buildEncodeCmd
+        CmdBuilder = Commands.buildEncode
         Verifier = Verify.verifyEncoded
         OutputExt = OutputExtension.mp4
         ErrorVerb = "Encoding"
@@ -38,7 +38,7 @@ module ModeConfig =
     }
 
     let private webmConfig = {
-        CmdBuilder = Commands.buildWebmRemuxCmd
+        CmdBuilder = Commands.buildWebmRemux
         Verifier = Verify.verifyWebm
         OutputExt = OutputExtension.webm
         ErrorVerb = "WebM remuxing"

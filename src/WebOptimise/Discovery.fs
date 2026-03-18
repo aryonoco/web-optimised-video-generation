@@ -4,9 +4,8 @@ open System
 open System.Globalization
 open System.IO
 open System.Text.RegularExpressions
-open FsToolkit.ErrorHandling
 
-/// File discovery, filename utilities, and mode resolution.
+/// File discovery, filename utilities, and mode resolution. Pure — no I/O.
 [<RequireQualifiedAccess>]
 module Discovery =
 
@@ -30,18 +29,15 @@ module Discovery =
         else
             slug
 
-    let sanitiseFilename (name: string) (ext: OutputExtension) : string =
-        $"%O{Guid.NewGuid()}_%s{slugify name}%s{OutputExtension.value ext}"
+    let sanitiseFilename (guid: Guid) (name: string) (ext: OutputExtension) : string =
+        $"%O{guid}_%s{slugify name}%s{OutputExtension.value ext}"
 
-    let findExistingOutput (outputDir: string) (originalName: string) (ext: OutputExtension) : string option =
+    let matchExistingOutput (files: string list) (originalName: string) (ext: OutputExtension) : string option =
         let suffix =
             $"_%s{slugify originalName}%s{OutputExtension.value ext}"
 
-        if Directory.Exists outputDir then
-            Directory.EnumerateFiles outputDir
-            |> Seq.tryFind (fun f -> (Path.GetFileName(f) |> NullSafe.path).EndsWith(suffix, StringComparison.Ordinal))
-        else
-            None
+        files
+        |> List.tryFind (fun f -> (Path.GetFileName(f) |> NullSafe.path).EndsWith(suffix, StringComparison.Ordinal))
 
     let effectiveMode (info: MediaFileInfo) (userMode: Mode) : Mode =
         if isMkv (MediaFilePath.extension info.Path) then
@@ -52,27 +48,24 @@ module Discovery =
     let outputDir (info: MediaFileInfo) : string =
         Path.Combine(MediaFilePath.directory info.Path, Constants.OutputDirName)
 
-    let findFiles (paths: string list) : Result<MediaFilePath list, AppError> =
+    let collectFiles (resolved: ResolvedPath list) : Result<MediaFilePath list, AppError> =
         let addIfNew (found, seen) full =
             if Set.contains full seen then
                 (found, seen)
             else
                 (full :: found, Set.add full seen)
 
-        let processPath (found, seen) p =
-            let resolved = Path.GetFullPath p
-
-            if File.Exists resolved then
-                let ext = Path.GetExtension resolved |> NullSafe.path
-
+        let processPath (found, seen) =
+            function
+            | ResolvedPath.File(fullPath, ext) ->
                 if not (isSupported ext) then
-                    Error(AppError.ValidationError $"Unsupported file type '%s{ext}': %s{p}")
+                    Error(AppError.ValidationError $"Unsupported file type '%s{ext}': %s{fullPath}")
                 else
-                    Ok(addIfNew (found, seen) resolved)
-            elif Directory.Exists resolved then
-                let files =
-                    Directory.EnumerateFiles resolved
-                    |> Seq.filter (fun f ->
+                    Ok(addIfNew (found, seen) fullPath)
+            | ResolvedPath.Directory(_, files) ->
+                let filtered =
+                    files
+                    |> List.filter (fun f ->
                         isSupported (Path.GetExtension f |> NullSafe.path)
                         && (Path.GetDirectoryName f
                             |> NullSafe.path
@@ -80,19 +73,18 @@ module Discovery =
                             |> NullSafe.path)
                            <> Constants.OutputDirName
                     )
-                    |> Seq.sortWith (fun a b ->
+                    |> List.sortWith (fun a b ->
                         naturalComparer.Compare(
                             Path.GetFileName a |> NullSafe.path,
                             Path.GetFileName b |> NullSafe.path
                         )
                     )
 
-                Ok(Seq.fold (fun (f, s) file -> addIfNew (f, s) (Path.GetFullPath file)) (found, seen) files)
-            else
-                Error(AppError.ValidationError $"Path does not exist: %s{p}")
+                Ok(List.fold (fun (f, s) file -> addIfNew (f, s) file) (found, seen) filtered)
+            | ResolvedPath.NotFound p -> Error(AppError.ValidationError $"Path does not exist: %s{p}")
 
-        paths
-        |> List.fold (fun acc p -> acc |> Result.bind (fun state -> processPath state p)) (Ok([], Set.empty))
+        resolved
+        |> List.fold (fun acc rp -> acc |> Result.bind (fun state -> processPath state rp)) (Ok([], Set.empty))
         |> Result.map (fun (found, _) -> found |> List.rev |> List.map MediaFilePath.ofTrusted)
 
     let rejectMkvEncode (files: MediaFilePath list) (mode: Mode) : Result<unit, AppError> =

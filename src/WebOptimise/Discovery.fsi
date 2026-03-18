@@ -1,17 +1,21 @@
 namespace WebOptimise
 
+open System
+
 [<RequireQualifiedAccess>]
 module Discovery =
 
-    val sanitiseFilename: name: string -> ext: OutputExtension -> string
+    val slugify: name: string -> string
 
-    val findExistingOutput: outputDir: string -> originalName: string -> ext: OutputExtension -> string option
+    val sanitiseFilename: guid: Guid -> name: string -> ext: OutputExtension -> string
+
+    val matchExistingOutput: files: string list -> originalName: string -> ext: OutputExtension -> string option
 
     val effectiveMode: info: MediaFileInfo -> userMode: Mode -> Mode
 
     val outputDir: info: MediaFileInfo -> string
 
-    val findFiles: paths: string list -> Result<MediaFilePath list, AppError>
+    val collectFiles: resolved: ResolvedPath list -> Result<MediaFilePath list, AppError>
 
     val rejectMkvEncode: files: MediaFilePath list -> mode: Mode -> Result<unit, AppError>
 

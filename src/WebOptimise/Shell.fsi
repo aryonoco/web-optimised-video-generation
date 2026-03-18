@@ -14,7 +14,7 @@ type BufferedOutput = {
 [<RequireQualifiedAccess>]
 module Shell =
 
-    val runBuffered: tool: string -> args: string list -> Task<Result<BufferedOutput, string>>
+    val runBuffered: tool: string -> args: string list -> Task<Result<BufferedOutput, ShellError>>
 
     val runStreaming:
         tool: string ->
@@ -22,6 +22,10 @@ module Shell =
         onStdOutLine: (string -> unit) ->
         stdErrBuilder: StringBuilder ->
         ct: CancellationToken ->
-            Task<Result<int, string>>
+            Task<Result<int, ShellError>>
 
-    val runExists: tool: string -> Task<Result<unit, string>>
+    val runExists: tool: string -> Task<Result<unit, ShellError>>
+
+    val resolveInputPath: path: string -> ResolvedPath
+
+    val enumerateFiles: dir: string -> string list

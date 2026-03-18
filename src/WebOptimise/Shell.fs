@@ -17,7 +17,7 @@ type BufferedOutput = {
 [<RequireQualifiedAccess>]
 module Shell =
 
-    let runBuffered (tool: string) (args: string list) : Task<Result<BufferedOutput, string>> =
+    let runBuffered (tool: string) (args: string list) : Task<Result<BufferedOutput, ShellError>> =
         task {
             try
                 let! r =
@@ -34,8 +34,8 @@ module Shell =
                         StdErr = r.StandardError
                     }
             with
-            | :? ComponentModel.Win32Exception -> return Error $"%s{tool} not found in PATH"
-            | ex -> return Error $"%s{tool} failed: %s{ex.Message}"
+            | :? ComponentModel.Win32Exception -> return Error(ShellError.NotFound tool)
+            | ex -> return Error(ShellError.Failed(tool, ex.Message))
         }
 
     let runStreaming
@@ -44,7 +44,7 @@ module Shell =
         (onStdOutLine: string -> unit)
         (stdErrBuilder: StringBuilder)
         (ct: CancellationToken)
-        : Task<Result<int, string>>
+        : Task<Result<int, ShellError>>
         =
         task {
             try
@@ -59,14 +59,33 @@ module Shell =
 
                 return Ok r.ExitCode
             with
-            | :? OperationCanceledException -> return Error "cancelled"
-            | :? ComponentModel.Win32Exception -> return Error $"%s{tool} not found in PATH"
-            | ex -> return Error $"Unexpected error: %s{ex.Message}"
+            | :? OperationCanceledException -> return Error ShellError.Cancelled
+            | :? ComponentModel.Win32Exception -> return Error(ShellError.NotFound tool)
+            | ex -> return Error(ShellError.Failed(tool, ex.Message))
         }
 
-    let runExists (tool: string) : Task<Result<unit, string>> =
+    let runExists (tool: string) : Task<Result<unit, ShellError>> =
         task {
             match! runBuffered tool [ "-version" ] with
             | Ok _ -> return Ok()
             | Error msg -> return Error msg
         }
+
+    let resolveInputPath (path: string) : ResolvedPath =
+        let resolved = System.IO.Path.GetFullPath path
+
+        if System.IO.File.Exists resolved then
+            ResolvedPath.File(resolved, System.IO.Path.GetExtension resolved |> NullSafe.path)
+        elif System.IO.Directory.Exists resolved then
+            let files =
+                System.IO.Directory.EnumerateFiles resolved |> Seq.toList
+
+            ResolvedPath.Directory(resolved, files)
+        else
+            ResolvedPath.NotFound path
+
+    let enumerateFiles (dir: string) : string list =
+        if System.IO.Directory.Exists dir then
+            System.IO.Directory.EnumerateFiles dir |> Seq.toList
+        else
+            []

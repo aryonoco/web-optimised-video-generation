@@ -32,6 +32,8 @@ module Shell =
     val enumerateFiles: dir: OutputDir -> string list
 
     val createDirectory: dir: OutputDir -> Result<unit, ShellError>
+    val createStagingDir: dir: StagingDir -> Result<unit, ShellError>
+    val moveFile: src: OutputPath -> dst: OutputPath -> Result<unit, ShellError>
     val fileLength: path: OutputPath -> Result<int64, ShellError>
     val fileExists: path: OutputPath -> bool
     val deleteFile: path: OutputPath -> Result<unit, ShellError>

@@ -76,7 +76,8 @@ module Shell =
         let resolved = System.IO.Path.GetFullPath path
 
         if System.IO.File.Exists resolved then
-            let ext = System.IO.Path.GetExtension resolved |> NullSafe.path
+            let ext =
+                System.IO.Path.GetExtension resolved |> Unchecked.nonNull
 
             match ContainerFormat.ofExtension ext with
             | ValueSome container -> ResolvedPath.File(resolved, container)
@@ -102,6 +103,22 @@ module Shell =
             System.IO.Directory.CreateDirectory(OutputDir.value dir)
             |> ignore
 
+            Ok()
+        with ex ->
+            Error(ShellError.Failed("filesystem", ex.Message))
+
+    let createStagingDir (dir: StagingDir) : Result<unit, ShellError> =
+        try
+            System.IO.Directory.CreateDirectory(StagingDir.value dir)
+            |> ignore
+
+            Ok()
+        with ex ->
+            Error(ShellError.Failed("filesystem", ex.Message))
+
+    let moveFile (src: OutputPath) (dst: OutputPath) : Result<unit, ShellError> =
+        try
+            System.IO.File.Move(OutputPath.value src, OutputPath.value dst)
             Ok()
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))

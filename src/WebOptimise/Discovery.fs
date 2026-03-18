@@ -13,9 +13,18 @@ module Discovery =
     let naturalComparer =
         StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering)
 
+    let private caseInsensitiveFs =
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+
+    let private normalizeForDedup (path: string) =
+        if caseInsensitiveFs then
+            path.ToUpperInvariant()
+        else
+            path
+
     let slugify (name: string) =
         let stem =
-            Path.GetFileNameWithoutExtension name |> NullSafe.path
+            Path.GetFileNameWithoutExtension name |> Unchecked.nonNull
 
         let slug =
             Regex.Replace(stem.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-')
@@ -33,7 +42,7 @@ module Discovery =
             $"_%s{slugify originalName}%s{OutputExtension.value ext}"
 
         files
-        |> List.tryFind (fun f -> (Path.GetFileName(f) |> NullSafe.path).EndsWith(suffix, StringComparison.Ordinal))
+        |> List.tryFind (fun f -> (Path.GetFileName f |> Unchecked.nonNull).EndsWith(suffix, StringComparison.Ordinal))
         |> Option.bind (fun f ->
             match OutputPath.ofFullPath f with
             | Ok op -> Some op
@@ -51,10 +60,12 @@ module Discovery =
 
     let collectFiles (resolved: ResolvedPath list) : Result<NonEmpty<MediaFilePath>, AppError> =
         let addIfNew (found, seen) full =
-            if Set.contains full seen then
+            let key = normalizeForDedup full
+
+            if Set.contains key seen then
                 (found, seen)
             else
-                (full :: found, Set.add full seen)
+                (full :: found, Set.add key seen)
 
         let processPath (found, seen) =
             function
@@ -65,18 +76,17 @@ module Discovery =
                 let filtered =
                     files
                     |> List.filter (fun f ->
-                        ContainerFormat.ofExtension (Path.GetExtension f |> NullSafe.path)
+                        ContainerFormat.ofExtension (Path.GetExtension f |> Unchecked.nonNull)
                         |> ValueOption.isSome
-                        && (Path.GetDirectoryName f
-                            |> NullSafe.path
-                            |> Path.GetFileName
-                            |> NullSafe.path)
+                        && (match Path.GetDirectoryName f with
+                            | null -> ""
+                            | d -> Path.GetFileName d |> Unchecked.nonNull)
                            <> Constants.OutputDirName
                     )
                     |> List.sortWith (fun a b ->
                         naturalComparer.Compare(
-                            Path.GetFileName a |> NullSafe.path,
-                            Path.GetFileName b |> NullSafe.path
+                            Path.GetFileName a |> Unchecked.nonNull,
+                            Path.GetFileName b |> Unchecked.nonNull
                         )
                     )
 

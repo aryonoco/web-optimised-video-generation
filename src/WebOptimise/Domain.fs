@@ -6,14 +6,6 @@ open System.Text.Json
 open System.Threading.Tasks
 open FsToolkit.ErrorHandling
 
-[<RequireQualifiedAccess>]
-module NullSafe =
-
-    let inline path (s: string | null) =
-        match s with
-        | null -> ""
-        | v -> v
-
 // Branded types
 
 [<Struct; RequireQualifiedAccess>]
@@ -49,7 +41,7 @@ module MediaFilePath =
         if String.IsNullOrWhiteSpace path then
             Error "File path must not be empty"
         else
-            let ext = Path.GetExtension path |> NullSafe.path
+            let ext = Path.GetExtension path |> Unchecked.nonNull
 
             match ContainerFormat.ofExtension ext with
             | ValueSome fmt -> Ok(MediaFilePath(path, fmt))
@@ -59,10 +51,12 @@ module MediaFilePath =
 
     let container (MediaFilePath(_, c)) = c
 
-    let name (MediaFilePath(p, _)) = Path.GetFileName p |> NullSafe.path
+    let name (MediaFilePath(p, _)) = Path.GetFileName p |> Unchecked.nonNull
 
     let directory (MediaFilePath(p, _)) =
-        Path.GetDirectoryName p |> NullSafe.path
+        match Path.GetDirectoryName p with
+        | null -> ""
+        | dir -> dir
 
 [<Struct>]
 type OutputExtension = private | OutputExtension of string
@@ -165,7 +159,7 @@ module OutputPath =
 
     let value (OutputPath p) = p
 
-    let fileName (OutputPath p) = Path.GetFileName p |> NullSafe.path
+    let fileName (OutputPath p) = Path.GetFileName p |> Unchecked.nonNull
 
 [<Struct>]
 type OutputDir = private | OutputDir of string
@@ -177,6 +171,17 @@ module OutputDir =
         OutputDir(Path.Combine(MediaFilePath.directory path, Constants.OutputDirName))
 
     let value (OutputDir d) = d
+
+[<Struct>]
+type StagingDir = private | StagingDir of string
+
+[<RequireQualifiedAccess>]
+module StagingDir =
+
+    let forOutput (dir: OutputDir) : StagingDir =
+        StagingDir(Path.Combine(OutputDir.value dir, Constants.StagingDirName))
+
+    let value (StagingDir d) = d
 
 [<RequireQualifiedAccess>]
 type ResolvedPath =

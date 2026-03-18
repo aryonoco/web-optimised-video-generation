@@ -14,6 +14,8 @@ type Env = {
     ResolveInputPath: string -> ResolvedPath
     EnumerateFiles: OutputDir -> string list
     CreateDirectory: OutputDir -> Result<unit, ShellError>
+    CreateStagingDir: StagingDir -> Result<unit, ShellError>
+    MoveFile: OutputPath -> OutputPath -> Result<unit, ShellError>
     FileLength: OutputPath -> Result<int64, ShellError>
     FileExists: OutputPath -> bool
     DeleteFile: OutputPath -> Result<unit, ShellError>

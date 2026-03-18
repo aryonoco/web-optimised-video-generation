@@ -8,6 +8,9 @@ module Constants =
     [<Literal>]
     let OutputDirName = "web-optimised"
 
+    [<Literal>]
+    let StagingDirName = ".staging"
+
     // x264 encoding settings
     [<Literal>]
     let Crf = 25

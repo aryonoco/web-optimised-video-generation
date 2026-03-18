@@ -60,6 +60,8 @@ module Process =
         (ct: CancellationToken)
         : Task<Result<EncodeResult, AppError>>
         =
+        let stagingDir = StagingDir.forOutput outputDir
+
         let setupResult =
             result {
                 do!
@@ -70,21 +72,38 @@ module Process =
                         )
                     )
 
-                return!
-                    OutputPath.create
-                        (OutputDir.value outputDir)
-                        (Discovery.sanitiseFilename (Guid.NewGuid()) (MediaFilePath.name info.Path) config.OutputExt)
+                do!
+                    env.CreateStagingDir stagingDir
+                    |> Result.mapError (fun e ->
+                        AppError.Process(
+                            ProcessFailure.OutputDirFailed(StagingDir.value stagingDir, ShellError.format e)
+                        )
+                    )
+
+                let baseName =
+                    Discovery.sanitiseFilename (Guid.NewGuid()) (MediaFilePath.name info.Path) config.OutputExt
+
+                let! finalPath =
+                    OutputPath.create (OutputDir.value outputDir) baseName
                     |> Result.mapError (fun msg ->
                         AppError.Process(ProcessFailure.OutputDirFailed(OutputDir.value outputDir, msg))
                     )
+
+                let! stagingPath =
+                    OutputPath.create (StagingDir.value stagingDir) baseName
+                    |> Result.mapError (fun msg ->
+                        AppError.Process(ProcessFailure.OutputDirFailed(StagingDir.value stagingDir, msg))
+                    )
+
+                return struct (finalPath, stagingPath)
             }
 
         match setupResult with
         | Error e -> Task.FromResult(Error e)
-        | Ok outputPath ->
+        | Ok(struct (finalPath, stagingPath)) ->
 
             task {
-                let cmd = config.CmdBuilder info outputPath
+                let cmd = config.CmdBuilder info stagingPath
                 let args = Commands.render cmd
                 let stdErrBuilder = StringBuilder()
 
@@ -95,13 +114,17 @@ module Process =
                     result {
                         do! interpretExitCode info config.ErrorVerb args stdErrBuilder shellResult
 
+                        do!
+                            env.MoveFile stagingPath finalPath
+                            |> Result.mapError (fun e -> AppError.Process(ProcessFailure.ShellFailed e))
+
                         let! outputSize =
-                            env.FileLength outputPath
+                            env.FileLength finalPath
                             |> Result.mapError (fun e -> AppError.Process(ProcessFailure.ShellFailed e))
 
                         return {
                             InputPath = info.Path
-                            OutputPath = outputPath
+                            OutputPath = finalPath
                             InputSize = info.SizeBytes
                             OutputSize = outputSize
                         }
@@ -110,7 +133,7 @@ module Process =
                 match encodeResult with
                 | Ok r -> return Ok r
                 | Error e ->
-                    tryCleanup env outputPath
+                    tryCleanup env stagingPath
                     return Error e
             }
 

@@ -14,6 +14,8 @@ type Env = {
     ResolveInputPath: string -> ResolvedPath
     EnumerateFiles: OutputDir -> string list
     CreateDirectory: OutputDir -> Result<unit, ShellError>
+    CreateStagingDir: StagingDir -> Result<unit, ShellError>
+    MoveFile: OutputPath -> OutputPath -> Result<unit, ShellError>
     FileLength: OutputPath -> Result<int64, ShellError>
     FileExists: OutputPath -> bool
     DeleteFile: OutputPath -> Result<unit, ShellError>
@@ -31,6 +33,8 @@ module Env =
         ResolveInputPath = Shell.resolveInputPath
         EnumerateFiles = Shell.enumerateFiles
         CreateDirectory = Shell.createDirectory
+        CreateStagingDir = Shell.createStagingDir
+        MoveFile = Shell.moveFile
         FileLength = Shell.fileLength
         FileExists = Shell.fileExists
         DeleteFile = Shell.deleteFile

@@ -10,8 +10,14 @@
     <Authors>Aryan Ameri</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>video;ffmpeg;web;optimise;remux;webm</PackageTags>
-    <RepositoryUrl>https://github.com/aryonoco/web-optimised-video-generation</RepositoryUrl>
+    <RepositoryUrl>https://github.com/aryonoco/fsharp-tools</RepositoryUrl>
   </PropertyGroup>
+
+  <!-- Preserve reflection metadata for Argu CLI argument parsing -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="WebOptimise" />
+    <TrimmerRootAssembly Include="Argu" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Include="Constants.fs" />

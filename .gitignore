@@ -85,27 +85,6 @@ id_ecdsa
 id_ed25519
 
 # -----------------------------------------------------------------------------
-# Video Files — prevent accidental commits of any video anywhere in the repo
-# -----------------------------------------------------------------------------
-*.mp4
-*.webm
-*.mkv
-*.mov
-*.m4v
-*.avi
-*.wmv
-*.flv
-*.ts
-*.mts
-*.m2ts
-*.vob
-*.ogv
-*.3gp
-
-# Processed output directory
-web-optimised/
-
-# -----------------------------------------------------------------------------
 # Jupyter Notebooks
 # -----------------------------------------------------------------------------
 .ipynb_checkpoints/

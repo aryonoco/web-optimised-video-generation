@@ -2,12 +2,12 @@
 set -euo pipefail
 
 echo "=========================================="
-echo "  Web Optimise DevContainer Setup"
+echo "  F# Tools DevContainer Setup"
 echo "=========================================="
 echo ""
 
 echo "Configuring shell..."
-DEVCONTAINER_DIR="/workspaces/web-optimised-video-generation/.devcontainer"
+DEVCONTAINER_DIR="/workspaces/fsharp-tools/.devcontainer"
 
 cp "${DEVCONTAINER_DIR}/config/zshrc" /home/vscode/.zshrc
 cp "${DEVCONTAINER_DIR}/config/zsh_plugins.txt" /home/vscode/.zsh_plugins.txt
@@ -16,18 +16,31 @@ cp "${DEVCONTAINER_DIR}/config/p10k.zsh" /home/vscode/.p10k.zsh
 echo "  Done"
 
 echo ""
-echo "Installing tools via mise..."
-WORKSPACE_DIR="/workspaces/web-optimised-video-generation"
+echo "Installing shared tools via mise..."
+WORKSPACE_DIR="/workspaces/fsharp-tools"
 
 if [[ -f "${WORKSPACE_DIR}/mise.toml" ]]; then
     cd "${WORKSPACE_DIR}"
     mise install --yes
-    mise reshim
     export PATH="/home/vscode/.local/share/mise/shims:${PATH}"
-    echo "  Tools installed from mise.toml"
+    echo "  Shared tools installed from mise.toml"
 else
     echo "  No mise.toml found, skipping mise install"
 fi
+
+echo ""
+echo "Installing tool-specific dependencies via mise..."
+for tool_mise in "${WORKSPACE_DIR}"/src/*/mise.toml; do
+    if [[ -f "${tool_mise}" ]]; then
+        tool_dir="$(dirname "${tool_mise}")"
+        tool_name="$(basename "${tool_dir}")"
+        cd "${tool_dir}"
+        mise install --yes
+        echo "  ${tool_name}: tools installed from src/${tool_name}/mise.toml"
+    fi
+done
+cd "${WORKSPACE_DIR}"
+mise reshim
 
 # Non-interactive shells (SSH, VS Code tasks) skip .zshrc, so mise shims
 # must be injected into PATH via a profile.d script
@@ -49,7 +62,7 @@ echo "  Done"
 echo ""
 echo "Verifying CLI tool availability..."
 failed=0
-for cmd in ffmpeg ffprobe just cspell; do
+for cmd in just cspell ffmpeg ffprobe; do
     if ! command -v "${cmd}" &>/dev/null; then
         echo "  ERROR: ${cmd} not found after installation" >&2
         failed=1
@@ -69,15 +82,17 @@ echo "=========================================="
 echo "  Setup Complete!"
 echo "=========================================="
 echo ""
-echo "Tools installed via mise (from mise.toml):"
-echo "  - just, ffmpeg, ffprobe, cspell"
+echo "Shared tools installed via mise:"
+echo "  - just, cspell"
+echo "Tool-specific tools installed via mise:"
+echo "  - WebOptimise: ffmpeg, ffprobe"
 echo ".NET tools installed via dotnet tool restore:"
 echo "  - fantomas, fsharplint, fsharp-analyzers"
 echo ""
 echo "Available commands:"
-echo "  just --list   - Show all available commands"
-echo "  just ci       - Run full CI pipeline"
-echo "  just fmt      - Format F# code with fantomas"
-echo "  just build    - Debug build"
-echo "  just release  - Release build (single-file, trimmed)"
+echo "  just --list            - Show all available commands"
+echo "  just ci                - Run full CI pipeline"
+echo "  just fmt               - Format F# code with fantomas"
+echo "  just build             - Debug build"
+echo "  just release <Tool>    - Release build for a specific tool"
 echo ""

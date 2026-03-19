@@ -10,7 +10,7 @@ get_version() {
 }
 
 echo ""
-echo "=== Web Optimise Environment ==="
+echo "=== F# Tools Environment ==="
 echo ""
 
 ver_dotnet=$(get_version dotnet --version)

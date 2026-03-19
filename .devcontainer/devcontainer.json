@@ -1,10 +1,10 @@
 {
-  "name": "Web Optimised Video Generation",
+  "name": "F# Tools",
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "workspaceFolder": "/workspaces/web-optimised-video-generation",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/web-optimised-video-generation,type=bind,consistency=cached",
+  "workspaceFolder": "/workspaces/fsharp-tools",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/fsharp-tools,type=bind,consistency=cached",
 
   "containerUser": "vscode",
   "remoteUser": "vscode",
@@ -30,17 +30,17 @@
 
   "mounts": [
     {
-      "source": "wov-nuget-cache-${devcontainerId}",
+      "source": "fst-nuget-cache-${devcontainerId}",
       "target": "/home/vscode/.nuget/packages",
       "type": "volume"
     },
     {
-      "source": "wov-gh-config-${devcontainerId}",
+      "source": "fst-gh-config-${devcontainerId}",
       "target": "/home/vscode/.config/gh",
       "type": "volume"
     },
     {
-      "source": "wov-mise-data-${devcontainerId}",
+      "source": "fst-mise-data-${devcontainerId}",
       "target": "/home/vscode/.local/share/mise",
       "type": "volume"
     },
@@ -67,8 +67,8 @@
 
   "runArgs": [
     "--init",
-    "--name", "web-optimise",
-    "--hostname", "web-optimise",
+    "--name", "fsharp-tools",
+    "--hostname", "fsharp-tools",
     "--cap-drop=ALL",
     "--cap-add=NET_BIND_SERVICE",
     "--cap-add=DAC_OVERRIDE",

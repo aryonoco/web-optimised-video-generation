@@ -31,5 +31,5 @@ RUN git clone --depth=1 https://github.com/mattmc3/antidote.git /home/vscode/.an
 # binaries are available in non-interactive shells (e.g. VS Code tasks, cron).
 ENV PATH="/home/vscode/.local/bin:/home/vscode/.local/share/mise/shims:${PATH}"
 
-WORKDIR /workspaces/web-optimised-video-generation
+WORKDIR /workspaces/fsharp-tools
 USER vscode

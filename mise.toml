@@ -2,11 +2,3 @@
 just = "1.47.1"
 node = "lts"
 "npm:cspell" = "latest"
-
-[tools."github:BtbN/FFmpeg-Builds"]
-version = "latest"
-filter_bins = "ffmpeg,ffprobe"
-
-[tools."github:BtbN/FFmpeg-Builds".platforms]
-linux-x64 = { asset_pattern = "ffmpeg-master-latest-linux64-gpl.tar.xz" }
-linux-arm64 = { asset_pattern = "ffmpeg-master-latest-linuxarm64-gpl.tar.xz" }

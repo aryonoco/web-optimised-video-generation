@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-CLI tool that optimises video files for progressive web delivery using ffmpeg/ffprobe. F# on .NET 10.0.
+Monorepo of F# CLI tools on .NET 10.0. Each tool lives in `src/<ToolName>/` as a self-contained project.
 
 ## CRITICAL: NO AI ATTRIBUTION
 
@@ -11,12 +11,13 @@ Preserve strict FP principles in all changes — see `.claude/rules/fp-principle
 ## Build & Run
 
 ```bash
-dotnet build                                          # debug build
-dotnet publish -c Release                             # release (single-file, trimmed)
-dotnet run --project src/WebOptimise -- <paths> [-m remux|encode] [-n] [-f]
+dotnet build                                          # build all tools
+dotnet build src/<ToolName>                           # build one tool
+dotnet publish src/<ToolName> -c Release              # release one tool
+dotnet run --project src/<ToolName> -- <args>          # run one tool
 ```
 
-Requires .NET 10.0 SDK. `ffmpeg` and `ffprobe` must be on PATH.
+Requires .NET 10.0 SDK. Individual tools may require additional dependencies (see per-tool `mise.toml`).
 
 ## Quality Workflow
 
@@ -26,29 +27,23 @@ After each significant change, run in order and fix every issue:
 
 1. `dotnet fantomas src/` — format
 2. `dotnet fantomas --check src/` — verify (exit 0 = OK, 1 = needs formatting, 99 = error)
-3. `dotnet fsharplint lint WebOptimise.slnx` — lint
+3. `dotnet fsharplint lint FSharpTools.slnx` — lint
 4. `dotnet build -c Release` — zero warnings/errors (G-Research + Ionide analyzers included via FSharp.Analyzers.Build)
 
-## Architecture
+## Tools
 
-Three processing modes:
+- **WebOptimise** (`src/WebOptimise/`): optimise video files for progressive web delivery. See `.claude/rules/weboptimise.md` for architecture context.
 
-- **Remux** (MP4/M4V/MOV): copy streams, add `faststart` atom, strip metadata
-- **Encode** (MP4): re-encode H.264 High/4.0 via x264 (CRF 25, preset slower), 2-second keyframe intervals
-- **Webm** (MKV with AV1+Opus): remux to WebM, validate EBML Cues element at front
+## Shared Infrastructure
 
-Pipeline: parse args (Argu) -> validate tools -> discover/deduplicate files -> probe (ffprobe JSON) -> display analysis -> process with progress -> verify -> summary.
-
-Output goes to `web-optimised/` subdirectory alongside source, preserving filename with .mp4 or .webm extension.
-
-### Key Design Decisions
-
-- **Functional Core, Imperative Shell**: Pure modules (Constants, Domain, Commands, ProbeParse, Ebml, ModeConfig, Discovery) contain zero side effects. I/O lives in Shell, Process, Verify, Display, Cli.
-- **Env record** (`Capabilities.fs`): all I/O primitives injected via `Env` — other modules receive `env: Env`, never call Shell directly.
-- **ModeConfig dispatch table**: maps each mode to its command builder, verifier, and output extension.
+- `Directory.Build.props` — compiler settings, trimming, publishing (applies to all projects)
+- `Directory.Build.targets` — F# analyzer config (applies to all projects)
+- `Directory.Packages.props` — central NuGet package version management
+- Tool-specific config (TrimmerRootAssembly, external deps) belongs in each `.fsproj` and `src/<Tool>/mise.toml`
 
 ## Gotchas
 
-- Compile order in `.fsproj` defines module dependency order — reordering files can break the build if not careful.
+- Compile order in each `.fsproj` defines module dependency order — reordering files can break the build.
 - `dotnet tool restore` is required before the first quality workflow run.
 - All analyzer findings (G-Research + Ionide) are treated as build errors, not warnings.
+- Each tool may have its own `mise.toml` for tool-specific dependencies (e.g., ffmpeg for WebOptimise).

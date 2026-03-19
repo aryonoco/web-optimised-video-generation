@@ -24,7 +24,7 @@ fmt-check:
 
 # Lint with fsharplint
 lint:
-    dotnet fsharplint lint WebOptimise.slnx
+    dotnet fsharplint lint FSharpTools.slnx
 
 # Debug build
 build:
@@ -34,10 +34,14 @@ build:
 build-release:
     dotnet build -c Release
 
-# Publish release (single-file, trimmed, self-contained)
-release rid=default_rid:
+# Publish a specific tool (single-file, trimmed, self-contained)
+release tool rid=default_rid:
+    dotnet publish src/{{ tool }}/{{ tool }}.fsproj -c Release -r {{ rid }}
+    @echo "Published: src/{{ tool }}/bin/Release/net10.0/{{ rid }}/publish/{{ tool }}"
+
+# Publish all tools
+release-all rid=default_rid:
     dotnet publish -c Release -r {{ rid }}
-    @echo "Published: src/WebOptimise/bin/Release/net10.0/{{ rid }}/publish/WebOptimise"
 
 # Clean build artifacts
 clean:
@@ -47,11 +51,14 @@ clean:
 # Full CI pipeline: format check, lint, release build
 ci: fmt-check lint build-release
 
-# Show tool versions
+# Show shared tool versions
 versions:
     @echo "=== Tool Versions ==="
     @dotnet --version
-    @ffmpeg -version 2>&1 | head -1
-    @ffprobe -version 2>&1 | head -1
     @just --version
     @dotnet fantomas --version 2>&1 | head -1
+
+# Show WebOptimise-specific tool versions
+versions-weboptimise:
+    @ffmpeg -version 2>&1 | head -1
+    @ffprobe -version 2>&1 | head -1

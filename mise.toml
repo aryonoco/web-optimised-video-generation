@@ -1,5 +1,7 @@
 [tools]
 just = "1.47.1"
+node = "lts"
+"npm:cspell" = "latest"
 
 [tools."github:BtbN/FFmpeg-Builds"]
 version = "latest"

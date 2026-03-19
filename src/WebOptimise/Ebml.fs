@@ -6,25 +6,19 @@ open System
 [<RequireQualifiedAccess>]
 module Ebml =
 
-    let cuesElementId =
-        ReadOnlyMemory(
-            [|
-                0x1Cuy
-                0x53uy
-                0xBBuy
-                0x6Buy
-            |]
-        )
+    let private cuesElementId: byte array = [|
+        0x1Cuy
+        0x53uy
+        0xBBuy
+        0x6Buy
+    |]
 
-    let clusterElementId =
-        ReadOnlyMemory(
-            [|
-                0x1Fuy
-                0x43uy
-                0xB6uy
-                0x75uy
-            |]
-        )
+    let private clusterElementId: byte array = [|
+        0x1Fuy
+        0x43uy
+        0xB6uy
+        0x75uy
+    |]
 
     let vintWidth (firstByte: byte) : int =
         if firstByte = 0uy then
@@ -33,7 +27,7 @@ module Ebml =
             9
             - (int (System.Numerics.BitOperations.Log2(uint firstByte)) + 1)
 
-    let readElementId (data: ReadOnlySpan<byte>) (pos: int) : struct (ReadOnlyMemory<byte> * int) voption =
+    let private skipVint (data: ReadOnlySpan<byte>) (pos: int) : int voption =
         if pos >= data.Length then
             ValueNone
         else
@@ -42,10 +36,20 @@ module Ebml =
             if width = 0 || pos + width > data.Length then
                 ValueNone
             else
-                let slice = data.Slice(pos, width).ToArray()
-                ValueSome(struct (ReadOnlyMemory slice, pos + width))
+                ValueSome(pos + width)
 
-    let readElementSize (data: ReadOnlySpan<byte>) (pos: int) : struct (int * int) voption =
+    let private matchesId (data: ReadOnlySpan<byte>) (pos: int) (width: int) (target: byte array) : bool =
+        width = target.Length
+        && data.Slice(pos, width).SequenceEqual(ReadOnlySpan(target))
+
+    [<TailCall>]
+    let rec private foldVintBytes (data: ReadOnlySpan<byte>) (i: int) (endPos: int) (acc: int64) : int64 =
+        if i >= endPos then
+            acc
+        else
+            foldVintBytes data (i + 1) endPos ((acc <<< 8) ||| int64 data[i])
+
+    let readElementSize (data: ReadOnlySpan<byte>) (pos: int) : struct (int64 * int) voption =
         if pos >= data.Length then
             ValueNone
         else
@@ -54,31 +58,24 @@ module Ebml =
             if width = 0 || pos + width > data.Length then
                 ValueNone
             else
-                let bytes = data.Slice(pos, width).ToArray()
-
-                let value =
-                    (0L, bytes)
-                    ||> Array.fold (fun acc b -> (acc <<< 8) ||| int64 b)
-
+                let endPos = pos + width
+                let value = foldVintBytes data pos endPos 0L
                 let mask = (1L <<< (7 * width)) - 1L
-                let masked = value &&& mask
-                ValueSome(struct (int masked, pos + width))
-
-    let spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) = a.Span.SequenceEqual(b.Span)
+                ValueSome(struct (value &&& mask, endPos))
 
     let skipEbmlHeader (data: ReadOnlySpan<byte>) : Result<int, string> =
-        match readElementId data 0 with
+        match skipVint data 0 with
         | ValueNone -> Error "Could not parse EBML header"
-        | ValueSome(struct (_, pos1)) ->
+        | ValueSome pos1 ->
 
             match readElementSize data pos1 with
             | ValueNone -> Error "Could not parse EBML header"
-            | ValueSome(struct (size, pos2)) -> Ok(pos2 + size)
+            | ValueSome(struct (size, pos2)) -> Ok(pos2 + int size)
 
     let enterSegment (data: ReadOnlySpan<byte>) (pos: int) : Result<int, string> =
-        match readElementId data pos with
+        match skipVint data pos with
         | ValueNone -> Error "Could not parse Segment element"
-        | ValueSome(struct (_, segEnd)) ->
+        | ValueSome segEnd ->
 
             match readElementSize data segEnd with
             | ValueNone -> Error "Could not parse Segment element"
@@ -98,21 +95,28 @@ module Ebml =
             if pos >= data.Length then
                 ScanError "Could not locate Cues or Cluster element in file header"
             else
+                let idWidth = vintWidth data[pos]
 
-                match readElementId data pos with
-                | ValueNone -> ScanError "Could not locate Cues or Cluster element in file header"
-                | ValueSome(struct (eId, idEnd)) ->
+                if idWidth = 0 || pos + idWidth > data.Length then
+                    ScanError "Could not locate Cues or Cluster element in file header"
+                else
+                    let idEnd = pos + idWidth
 
                     match readElementSize data idEnd with
                     | ValueNone -> ScanError "Could not parse element size in file header"
                     | ValueSome(struct (eSize, eDataStart)) ->
 
-                        if spanEqual eId cuesElementId then
+                        if matchesId data pos idWidth cuesElementId then
                             CuesFound
-                        elif spanEqual eId clusterElementId then
+                        elif matchesId data pos idWidth clusterElementId then
                             ScanError "Cues not at front: first Cluster appears before Cues element"
                         else
-                            Scanning(eDataStart + eSize)
+                            let nextPos = int64 eDataStart + eSize
+
+                            if nextPos > int64 data.Length then
+                                ScanError "Element extends beyond scanned header region"
+                            else
+                                Scanning(int nextPos)
 
     [<TailCall>]
     let rec private scanLoop (data: ReadOnlySpan<byte>) (state: ScanState) : Result<unit, string> =

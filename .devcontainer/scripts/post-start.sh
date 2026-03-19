@@ -24,6 +24,7 @@ ver_just=$(get_version just --version)
 ver_ghcli=$(get_version gh --version)
 ver_fantomas=$(get_version dotnet fantomas --version)
 ver_fsharplint=$(get_version dotnet fsharplint --version)
+ver_cspell=$(get_version cspell --version)
 
 echo "Tools:"
 echo "  .NET SDK:     ${ver_dotnet}"
@@ -33,6 +34,7 @@ echo "  just:         ${ver_just}"
 echo "  GitHub CLI:   ${ver_ghcli}"
 echo "  fantomas:     ${ver_fantomas}"
 echo "  fsharplint:   ${ver_fsharplint}"
+echo "  cspell:       ${ver_cspell}"
 echo ""
 
 if gh auth status &>/dev/null 2>&1; then

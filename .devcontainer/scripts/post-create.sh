@@ -49,7 +49,7 @@ echo "  Done"
 echo ""
 echo "Verifying CLI tool availability..."
 failed=0
-for cmd in ffmpeg ffprobe just; do
+for cmd in ffmpeg ffprobe just cspell; do
     if ! command -v "${cmd}" &>/dev/null; then
         echo "  ERROR: ${cmd} not found after installation" >&2
         failed=1
@@ -70,7 +70,7 @@ echo "  Setup Complete!"
 echo "=========================================="
 echo ""
 echo "Tools installed via mise (from mise.toml):"
-echo "  - just, ffmpeg, ffprobe"
+echo "  - just, ffmpeg, ffprobe, cspell"
 echo ".NET tools installed via dotnet tool restore:"
 echo "  - fantomas, fsharplint, fsharp-analyzers"
 echo ""

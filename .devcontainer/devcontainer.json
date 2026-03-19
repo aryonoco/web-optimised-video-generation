@@ -1,0 +1,181 @@
+{
+  "name": "Web Optimised Video Generation",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspaces/web-optimised-video-generation",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/web-optimised-video-generation,type=bind,consistency=cached",
+
+  "containerUser": "vscode",
+  "remoteUser": "vscode",
+
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": false,
+      "configureZshAsDefaultShell": true,
+      "username": "vscode",
+      "userUid": "1000",
+      "userGid": "1000",
+      "upgradePackages": true
+    },
+    "ghcr.io/devcontainers/features/dotnet:2": {
+      "version": "10.0"
+    },
+    "ghcr.io/devcontainers-extra/features/mise:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    }
+  },
+
+  "mounts": [
+    {
+      "source": "wov-nuget-cache-${devcontainerId}",
+      "target": "/home/vscode/.nuget/packages",
+      "type": "volume"
+    },
+    {
+      "source": "wov-gh-config-${devcontainerId}",
+      "target": "/home/vscode/.config/gh",
+      "type": "volume"
+    },
+    {
+      "source": "wov-mise-data-${devcontainerId}",
+      "target": "/home/vscode/.local/share/mise",
+      "type": "volume"
+    },
+    {
+      "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.ssh",
+      "target": "/home/vscode/.ssh",
+      "type": "bind"
+    }
+  ],
+
+  "containerEnv": {
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_NOLOGO": "1",
+    "NUGET_PACKAGES": "/home/vscode/.nuget/packages",
+    "MISE_DATA_DIR": "/home/vscode/.local/share/mise",
+    "MISE_STATE_DIR": "/home/vscode/.local/share/mise/state",
+    "MISE_TRUSTED_CONFIG_PATHS": "/workspaces",
+    "MISE_YES": "1",
+    "DO_NOT_TRACK": "1",
+    "TZ": "UTC",
+    "EDITOR": "nano",
+    "VISUAL": "nano"
+  },
+
+  "runArgs": [
+    "--init",
+    "--name", "web-optimise",
+    "--hostname", "web-optimise",
+    "--cap-drop=ALL",
+    "--cap-add=NET_BIND_SERVICE",
+    "--cap-add=DAC_OVERRIDE",
+    "--security-opt=no-new-privileges:true"
+  ],
+
+  "onCreateCommand": "bash .devcontainer/scripts/on-create.sh",
+  "postCreateCommand": "bash .devcontainer/scripts/post-create.sh",
+  "postStartCommand": "bash .devcontainer/scripts/post-start.sh",
+  "updateContentCommand": "echo 'Content updated -- rebuild container for system upgrades'",
+  "waitFor": "onCreateCommand",
+  "shutdownAction": "stopContainer",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Ionide.Ionide-fsharp",
+        "ms-dotnettools.csdevkit",
+        "usernamehw.errorlens",
+        "EditorConfig.EditorConfig",
+        "streetsidesoftware.code-spell-checker",
+        "tamasfe.even-better-toml",
+        "nefrob.vscode-just-syntax",
+        "mhutchie.git-graph",
+        "github.vscode-github-actions",
+        "oderwat.indent-rainbow",
+        "hverlin.mise-vscode"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "zsh": { "path": "/bin/zsh", "args": ["-l"] },
+          "bash": { "path": "/bin/bash" }
+        },
+
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        "editor.rulers": [80, 120],
+        "editor.bracketPairColorization.enabled": true,
+        "editor.guides.bracketPairs": "active",
+
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true,
+        "files.trimFinalNewlines": true,
+        "files.exclude": {
+          "**/bin": true,
+          "**/obj": true,
+          "**/.venv": true,
+          "**/.ruff_cache": true
+        },
+        "search.exclude": {
+          "**/bin": true,
+          "**/obj": true,
+          "**/web-optimised": true
+        },
+        "files.watcherExclude": {
+          "**/bin/**": true,
+          "**/obj/**": true,
+          "**/web-optimised/**": true
+        },
+
+        "[fsharp]": {
+          "editor.defaultFormatter": "Ionide.Ionide-fsharp",
+          "editor.formatOnSave": true,
+          "editor.tabSize": 4
+        },
+        "[json]": {
+          "editor.tabSize": 2
+        },
+        "[yaml]": {
+          "editor.tabSize": 2
+        },
+        "[toml]": {
+          "editor.defaultFormatter": "tamasfe.even-better-toml",
+          "editor.formatOnSave": true
+        },
+        "[markdown]": {
+          "editor.wordWrap": "on"
+        },
+
+        "errorLens.enabledDiagnosticLevels": ["error", "warning"],
+
+        "cSpell.language": "en-GB",
+        "cSpell.enabledFileTypes": {
+          "fsharp": true,
+          "markdown": true,
+          "yaml": true,
+          "json": true,
+          "shellscript": true,
+          "toml": true
+        },
+        "cSpell.customDictionaries": {
+          "project-words": {
+            "name": "project-words",
+            "path": "${workspaceFolder}/project-words.txt",
+            "addWords": true,
+            "scope": "workspace"
+          }
+        }
+      }
+    }
+  },
+
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "4gb",
+    "storage": "16gb"
+  }
+}

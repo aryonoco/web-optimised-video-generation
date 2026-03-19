@@ -117,7 +117,7 @@ module Cli =
                     return
                         Error(AppError.Probe(ProbeFailure.NonZeroExit(probeResult.ExitCode, probeResult.StdErr, path)))
                 else
-                    match env.ParseJson probeResult.StdOut with
+                    match Json.parse probeResult.StdOut with
                     | Error msg -> return Error(AppError.Probe(ProbeFailure.JsonParseFailed(msg, path)))
                     | Ok root -> return ProbeParse.fromJson path root
         }
@@ -267,7 +267,7 @@ module Cli =
                 Display.displayAnalysis infos pipeline.Input.Mode
 
                 if pipeline.Input.Mode = WebOptimise.Mode.Remux then
-                    Display.displayRemuxWarnings infos
+                    Display.displayRemuxWarnings (Discovery.remuxWarnings infos)
 
                 if pipeline.Input.DryRun then
                     let dryVerb =

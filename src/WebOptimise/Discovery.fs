@@ -67,11 +67,13 @@ module Discovery =
             else
                 (full :: found, Set.add key seen)
 
-        let processPath (found, seen) =
+        let processPath ((found, seen), errors) =
             function
-            | ResolvedPath.File(fullPath, _) -> Ok(addIfNew (found, seen) fullPath)
+            | ResolvedPath.File(fullPath, _) -> addIfNew (found, seen) fullPath, errors
             | ResolvedPath.UnsupportedFile(fullPath, ext) ->
-                Error(AppError.Validation(ValidationFailure.UnsupportedExtension(ext, fullPath)))
+                (found, seen),
+                AppError.Validation(ValidationFailure.UnsupportedExtension(ext, fullPath))
+                :: errors
             | ResolvedPath.Directory(_, files) ->
                 let filtered =
                     files
@@ -90,24 +92,30 @@ module Discovery =
                         )
                     )
 
-                Ok(List.fold (fun (f, s) file -> addIfNew (f, s) file) (found, seen) filtered)
-            | ResolvedPath.NotFound p -> Error(AppError.Validation(ValidationFailure.PathNotFound p))
+                List.fold (fun (f, s) file -> addIfNew (f, s) file) (found, seen) filtered, errors
+            | ResolvedPath.NotFound p ->
+                (found, seen),
+                AppError.Validation(ValidationFailure.PathNotFound p)
+                :: errors
 
-        resolved
-        |> List.fold (fun acc rp -> acc |> Result.bind (fun state -> processPath state rp)) (Ok([], Set.empty))
-        |> Result.bind (fun (found, _) ->
+        let (found, _), errors =
+            resolved |> List.fold processPath (([], Set.empty), [])
+
+        match NonEmpty.ofList (List.rev errors) with
+        | ValueSome(NonEmpty(single, [])) -> Error single
+        | ValueSome nel -> Error(AppError.Multiple nel)
+        | ValueNone ->
             found
             |> List.rev
             |> List.traverseResultM (fun p ->
                 MediaFilePath.create p
                 |> Result.mapError (fun reason -> AppError.Validation(ValidationFailure.InvalidPath reason))
             )
-        )
-        |> Result.bind (fun files ->
-            match NonEmpty.ofList files with
-            | ValueSome nel -> Ok nel
-            | ValueNone -> Error(AppError.Validation ValidationFailure.NoSupportedFiles)
-        )
+            |> Result.bind (fun files ->
+                match NonEmpty.ofList files with
+                | ValueSome nel -> Ok nel
+                | ValueNone -> Error(AppError.Validation ValidationFailure.NoSupportedFiles)
+            )
 
     let rejectMkvEncode (files: MediaFilePath list) (mode: Mode) : Result<unit, AppError> =
         match mode with
@@ -151,3 +159,24 @@ module Discovery =
             Ok()
         else
             Error(AppError.Validation(ValidationFailure.MkvCodecViolations violations))
+
+    let remuxWarnings (infos: MediaFileInfo list) : string list =
+        infos
+        |> List.collect (fun info ->
+            if ContainerFormat.isMkv (MediaFilePath.container info.Path) then
+                []
+            else
+                let name = MediaFilePath.name info.Path
+
+                [
+                    if info.Video.Codec <> VideoCodec.H264 then
+                        $"%s{name}: codec is %s{VideoCodec.displayName info.Video.Codec} (not H.264). Use --mode encode to re-encode."
+                    elif info.Video.Profile <> ValueSome VideoProfile.High then
+                        let profileLabel =
+                            match info.Video.Profile with
+                            | ValueSome p -> VideoProfile.displayName p
+                            | ValueNone -> "N/A"
+
+                        $"%s{name}: profile is %s{profileLabel} (not High). Use --mode encode to upgrade."
+                ]
+        )

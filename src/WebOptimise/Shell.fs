@@ -1,11 +1,11 @@
 namespace WebOptimise
 
 open System
+open System.IO
 open System.Text
 open System.Threading
 open System.Threading.Tasks
 open CliWrap
-open System.Text.Json
 open CliWrap.Buffered
 
 [<Struct; NoComparison; NoEquality>]
@@ -73,18 +73,16 @@ module Shell =
         }
 
     let resolveInputPath (path: string) : ResolvedPath =
-        let resolved = System.IO.Path.GetFullPath path
+        let resolved = Path.GetFullPath path
 
-        if System.IO.File.Exists resolved then
-            let ext =
-                System.IO.Path.GetExtension resolved |> Unchecked.nonNull
+        if File.Exists resolved then
+            let ext = Path.GetExtension resolved |> Unchecked.nonNull
 
             match ContainerFormat.ofExtension ext with
             | ValueSome container -> ResolvedPath.File(resolved, container)
             | ValueNone -> ResolvedPath.UnsupportedFile(resolved, ext)
-        elif System.IO.Directory.Exists resolved then
-            let files =
-                System.IO.Directory.EnumerateFiles resolved |> Seq.toList
+        elif Directory.Exists resolved then
+            let files = Directory.EnumerateFiles resolved |> Seq.toList
 
             ResolvedPath.Directory(resolved, files)
         else
@@ -93,15 +91,14 @@ module Shell =
     let enumerateFiles (dir: OutputDir) : string list =
         let d = OutputDir.value dir
 
-        if System.IO.Directory.Exists d then
-            System.IO.Directory.EnumerateFiles d |> Seq.toList
+        if Directory.Exists d then
+            Directory.EnumerateFiles d |> Seq.toList
         else
             []
 
     let createDirectory (dir: OutputDir) : Result<unit, ShellError> =
         try
-            System.IO.Directory.CreateDirectory(OutputDir.value dir)
-            |> ignore
+            Directory.CreateDirectory(OutputDir.value dir) |> ignore
 
             Ok()
         with ex ->
@@ -109,8 +106,7 @@ module Shell =
 
     let createStagingDir (dir: StagingDir) : Result<unit, ShellError> =
         try
-            System.IO.Directory.CreateDirectory(StagingDir.value dir)
-            |> ignore
+            Directory.CreateDirectory(StagingDir.value dir) |> ignore
 
             Ok()
         with ex ->
@@ -118,30 +114,29 @@ module Shell =
 
     let moveFile (src: OutputPath) (dst: OutputPath) : Result<unit, ShellError> =
         try
-            System.IO.File.Move(OutputPath.value src, OutputPath.value dst)
+            File.Move(OutputPath.value src, OutputPath.value dst)
             Ok()
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))
 
     let fileLength (path: OutputPath) : Result<int64, ShellError> =
         try
-            Ok(System.IO.FileInfo(OutputPath.value path).Length)
+            Ok(FileInfo(OutputPath.value path).Length)
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))
 
-    let fileExists (path: OutputPath) : bool =
-        System.IO.File.Exists(OutputPath.value path)
+    let fileExists (path: OutputPath) : bool = File.Exists(OutputPath.value path)
 
     let deleteFile (path: OutputPath) : Result<unit, ShellError> =
         try
-            System.IO.File.Delete(OutputPath.value path)
+            File.Delete(OutputPath.value path)
             Ok()
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))
 
     let readFileHeader (path: OutputPath) (maxBytes: int) : Result<byte array, ShellError> =
         try
-            use fs = System.IO.File.OpenRead(OutputPath.value path)
+            use fs = File.OpenRead(OutputPath.value path)
             let buf = Array.zeroCreate (min (int fs.Length) maxBytes)
             let bytesRead = fs.Read(buf, 0, buf.Length)
 
@@ -151,9 +146,3 @@ module Shell =
                 Ok(buf[.. bytesRead - 1])
         with ex ->
             Error(ShellError.Failed("filesystem", ex.Message))
-
-    let parseJson (json: string) : Result<JsonElement, string> =
-        try
-            Ok(JsonElement.Parse(json))
-        with ex ->
-            Error ex.Message

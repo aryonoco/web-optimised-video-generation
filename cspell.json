@@ -1,0 +1,22 @@
+{
+  "version": "0.2",
+  "language": "en-GB",
+  "dictionaryDefinitions": [
+    {
+      "name": "project-words",
+      "path": "./project-words.txt",
+      "addWords": true
+    }
+  ],
+  "dictionaries": ["project-words"],
+  "ignorePaths": [
+    "bin/",
+    "obj/",
+    ".devcontainer/config/p10k.zsh",
+    "web-optimised/",
+    "*.sarif",
+    "*.mp4",
+    "*.webm",
+    "*.mkv"
+  ]
+}

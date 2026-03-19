@@ -20,3 +20,5 @@ module Discovery =
     val rejectMkvEncode: files: MediaFilePath list -> mode: Mode -> Result<unit, AppError>
 
     val validateMkvCodecs: infos: MediaFileInfo list -> Result<unit, AppError>
+
+    val remuxWarnings: infos: MediaFileInfo list -> string list

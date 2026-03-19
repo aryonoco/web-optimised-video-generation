@@ -106,7 +106,7 @@ module Verify =
             with
             | Error e -> return Error [ VerificationIssue.CheckFailed(ShellError.format e) ]
             | Ok result ->
-                match env.ParseJson result.StdOut with
+                match Json.parse result.StdOut with
                 | Error msg -> return Error [ VerificationIssue.CheckFailed $"Failed to parse ffprobe output: %s{msg}" ]
                 | Ok root -> return validateVideoProfile root |> Result.mapError List.singleton
         }

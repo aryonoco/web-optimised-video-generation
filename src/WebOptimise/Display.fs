@@ -64,38 +64,18 @@ module Display =
         |> toOutputPayload
         |> toConsole
 
-    let displayRemuxWarnings (infos: MediaFileInfo list) =
-        let warnings =
-            infos
-            |> List.collect (fun info ->
-                if ContainerFormat.isMkv (MediaFilePath.container info.Path) then
-                    []
-                else
-                    let name = MediaFilePath.name info.Path
-
-                    [
-                        if info.Video.Codec <> VideoCodec.H264 then
-                            Many [
-                                MC(Color.Yellow, "!")
-                                V
-                                    $" %s{name}: codec is %s{VideoCodec.displayName info.Video.Codec} (not H.264). Use --mode encode to re-encode."
-                            ]
-                        elif info.Video.Profile <> ValueSome VideoProfile.High then
-                            let profileLabel =
-                                match info.Video.Profile with
-                                | ValueSome p -> VideoProfile.displayName p
-                                | ValueNone -> "N/A"
-
-                            Many [
-                                MC(Color.Yellow, "!")
-                                V $" %s{name}: profile is %s{profileLabel} (not High). Use --mode encode to upgrade."
-                            ]
-                    ]
-            )
-
+    let displayRemuxWarnings (warnings: string list) =
         if not warnings.IsEmpty then
             NL |> toConsole
-            warnings |> List.iter toConsole
+
+            warnings
+            |> List.iter (fun msg ->
+                Many [
+                    MC(Color.Yellow, "!")
+                    V $" %s{msg}"
+                ]
+                |> toConsole
+            )
 
     let printSummary (results: EncodeResult list) =
         let rightAligned = { defaultColumnLayout with Alignment = Right }

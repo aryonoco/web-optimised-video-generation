@@ -1,0 +1,16 @@
+devcontainer
+dotnet
+fsharp
+fantomas
+fsharplint
+ffmpeg
+ffprobe
+faststart
+webm
+ebml
+remux
+x264
+ionide
+argu
+cliwrap
+spectrecoff

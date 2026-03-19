@@ -85,15 +85,25 @@ id_ecdsa
 id_ed25519
 
 # -----------------------------------------------------------------------------
-# Video Generation
-# TODO(human): Customise this section for your video processing workflow
+# Video Files — prevent accidental commits of any video anywhere in the repo
 # -----------------------------------------------------------------------------
-# Root-level generated web media (allows tracking media in subdirectories)
-/*.mp4
-/*.webm
-/*.mkv
-/*.mov
-/*.m4v
+*.mp4
+*.webm
+*.mkv
+*.mov
+*.m4v
+*.avi
+*.wmv
+*.flv
+*.ts
+*.mts
+*.m2ts
+*.vob
+*.ogv
+*.3gp
+
+# Processed output directory
+web-optimised/
 
 # -----------------------------------------------------------------------------
 # Jupyter Notebooks
@@ -229,3 +239,5 @@ project.lock.json
 # NuGet
 packages/
 .nuget/
+
+.fake

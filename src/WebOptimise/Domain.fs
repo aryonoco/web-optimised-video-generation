@@ -136,7 +136,7 @@ module NonEmpty =
                 | Error e, Error es -> Error(NonEmpty(e, es))
                 | Error e, Ok _ -> Error(NonEmpty(e, []))
                 | Ok _, Error(e :: es) -> Error(NonEmpty(e, es))
-                | Ok hOk, Error [] -> Ok(NonEmpty(hOk, []))
+                | Ok _, Error [] -> invalidOp "List.traverseTaskResultA returned Error []"
         }
 
 [<Struct>]
@@ -412,8 +412,18 @@ module AppError =
 
     let private formatProcess =
         function
-        | ProcessFailure.FfmpegFailed(code, stderr, _, fileName, verb) ->
-            $"%s{verb} failed for %s{fileName}: exit code %d{code}\n%s{stderr}"
+        | ProcessFailure.FfmpegFailed(code, stderr, cmd, fileName, verb) ->
+            let cmdLine =
+                cmd
+                |> List.map (fun a ->
+                    if a.Contains(' ') then
+                        $"\"%s{a}\""
+                    else
+                        a
+                )
+                |> String.concat " "
+
+            $"%s{verb} failed for %s{fileName}: exit code %d{code}\nCommand: %s{cmdLine}\n%s{stderr}"
         | ProcessFailure.Cancelled -> "Operation cancelled"
         | ProcessFailure.OutputDirFailed(dir, msg) -> $"Cannot create output directory '%s{dir}': %s{msg}"
         | ProcessFailure.ShellFailed e -> ShellError.format e
@@ -599,6 +609,12 @@ module Json =
             ValueSome(seq { for i in 0 .. elem.GetArrayLength() - 1 -> elem[i] })
         else
             ValueNone
+
+    let parse (json: string) : Result<JsonElement, string> =
+        try
+            Ok(JsonElement.Parse(json))
+        with ex ->
+            Error ex.Message
 
 // Pure helpers
 

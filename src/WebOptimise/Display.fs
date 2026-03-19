@@ -212,7 +212,7 @@ module Display =
                 | [] -> return Ok(List.rev acc)
                 | info :: rest ->
                     let description =
-                        $"[%d{idx}/%d{total}] %s{MediaFilePath.name info.Path}"
+                        $"[[%d{idx}/%d{total}]] %s{Markup.Escape(MediaFilePath.name info.Path)}"
 
                     let progressTask =
                         realizeIn ctx (HotCustomTask(info.DurationSecs, description))

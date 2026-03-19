@@ -20,10 +20,15 @@
 
     <!-- Publishing -->
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
 
     <!-- Deterministic builds -->
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
+
+  <!-- Preserve reflection metadata for Argu CLI argument parsing -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="WebOptimise" />
+    <TrimmerRootAssembly Include="Argu" />
+  </ItemGroup>
 </Project>

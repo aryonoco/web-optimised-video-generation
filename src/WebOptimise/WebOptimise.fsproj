@@ -11,7 +11,6 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>video;ffmpeg;web;optimise;remux;webm</PackageTags>
     <RepositoryUrl>https://github.com/aryonoco/web-optimised-video-generation</RepositoryUrl>
-    <ParallelCompilation>true</ParallelCompilation>
   </PropertyGroup>
 
   <ItemGroup>

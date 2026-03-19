@@ -60,8 +60,8 @@ module Ebml =
                     (0L, bytes)
                     ||> Array.fold (fun acc b -> (acc <<< 8) ||| int64 b)
 
-                let mask = (1L <<< (8 * width)) - 1L
-                let masked = value &&& (mask >>> width)
+                let mask = (1L <<< (7 * width)) - 1L
+                let masked = value &&& mask
                 ValueSome(struct (int masked, pos + width))
 
     let spanEqual (a: ReadOnlyMemory<byte>) (b: ReadOnlyMemory<byte>) = a.Span.SequenceEqual(b.Span)
